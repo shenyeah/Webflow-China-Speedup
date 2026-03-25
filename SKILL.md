@@ -10,6 +10,8 @@ description: >
 
 # Webflow 网站中国大陆访问加速
 
+> 📦 **GitHub 仓库**：[Webflowcn/webflow-china-speed](https://github.com/Webflowcn/webflow-china-speed) — 含可部署的 Worker 模板代码、配置示例和 Releases 下载包。遇到问题可以直接参考仓库中的 `references/worker-template.js`。
+
 ## ⚠️ 2025 年重要变化：Webflow 自定义域名被 GFW 封控
 
 **2025 年 11 月起**，Webflow 自定义域名在中国大陆严重受限或完全无法访问。原因链：
@@ -375,7 +377,9 @@ Webflow 社区流行的 Lenis 集成方案通常是一个**定制 bundle**，包
 
 ## Worker 代码模板
 
-完整的可直接部署的 Worker 代码见 `references/worker-template.js`。
+完整的可直接部署的 Worker 代码见本仓库的 [`references/worker-template.js`](https://github.com/Webflowcn/webflow-china-speed/blob/main/references/worker-template.js)。
+
+也可以直接从 [GitHub Releases](https://github.com/Webflowcn/webflow-china-speed/releases) 下载完整压缩包（含 SKILL.md + Worker 模板 + 配置示例），解压后作为参考直接使用。
 
 ### 命名规范
 
