@@ -1,0 +1,71 @@
+{
+  "headers": [
+    {
+      "source": "/*",
+      "headers": [
+        {
+          "key": "X-EdgeOne-Proxy",
+          "value": "edgeflow-reverse-proxy"
+        },
+        {
+          "key": "X-Proxy-Version",
+          "value": "edgeflow/1.1"
+        }
+      ]
+    }
+  ],
+  "cache": [
+    {
+      "source": "/__eo_asset_v3__/*",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.js",
+      "ttl": 604800
+    },
+    {
+      "source": "/*.css",
+      "ttl": 604800
+    },
+    {
+      "source": "/*.png",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.jpg",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.jpeg",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.gif",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.webp",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.svg",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.ico",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.woff2",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.woff",
+      "ttl": 2592000
+    },
+    {
+      "source": "/*.ttf",
+      "ttl": 2592000
+    }
+  ]
+}
