@@ -22,21 +22,6 @@
 
 ***
 
-## 为什么要用 webflow.io 地址而不是发布域名
-
-Webflow 自定义域名的 DNS 指向 `cdn.webflow.com`（Cloudflare IP），这个出口被 GFW 封锁，这也是为什么你的网站在大陆打不开的根本原因。详见 [Webflow 官方文档](https://help.webflow.com/hc/en-us/articles/33961315914515-Connect-your-Cloudflare-domain-to-Webflow)。
-
-反向代理方案通过 `xxx.webflow.io` 地址访问源站——这个域名走的是另一组 IP，目前在大陆仍可访问。代理负责从 `webflow.io` 拉取内容、改写被墙的资源、通过国内节点返回给用户。
-
-**⚠️ 关于 Webflow 使用条款**
-
-Webflow 的 [Terms of Service](https://webflow.com/legal/terms) 要求发布到自定义域名的站点使用付费计划。通过反向代理绕过 `cdn.webflow.com` 在技术上可行，但如果你使用的是 **Webflow 免费版 (Starter Plan)** 并通过本方案发布到自定义域名，这可能违反 Webflow 的服务条款。建议：
-
-- 购买至少一个 **Site Plan**（Basic / CMS / Business），这是合规使用 Webflow 的基础
-- 本方案的目的是绕过 GFW 的**地理限制**，不是绕过 Webflow 的**收费机制**
-- 如果使用免费版 + 反向代理，风险自负：Webflow 可能暂停你的账号或站点
-
-***
 
 ## 两条路线
 
@@ -109,6 +94,21 @@ webflow-china-speedup/
 └── references/
     └── worker-template.js         # Worker 代码（历史版本）
 ```
+
+***
+## 为什么要用 webflow.io 地址而不是发布域名
+
+Webflow 自定义域名的 DNS 指向 `cdn.webflow.com`（Cloudflare IP），这个出口被 GFW 封锁，这也是为什么你的网站在大陆打不开的根本原因。详见 [Webflow 官方文档](https://help.webflow.com/hc/en-us/articles/33961315914515-Connect-your-Cloudflare-domain-to-Webflow)。
+
+反向代理方案通过 `xxx.webflow.io` 地址访问源站——这个域名走的是另一组 IP，目前在大陆仍可访问。代理负责从 `webflow.io` 拉取内容、改写被墙的资源、通过国内节点返回给用户。
+
+**⚠️ 关于 Webflow 使用条款**
+
+Webflow 的 [Terms of Service](https://webflow.com/legal/terms) 要求发布到自定义域名的站点使用付费计划。通过反向代理绕过 `cdn.webflow.com` 在技术上可行，但如果你使用的是 **Webflow 免费版 (Starter Plan)** 并通过本方案发布到自定义域名，这可能违反 Webflow 的服务条款。建议：
+
+- 购买至少一个 **Site Plan**（Basic / CMS / Business），这是合规使用 Webflow 的基础
+- 本方案的目的是绕过 GFW 的**地理限制**，不是绕过 Webflow 的**收费机制**
+- 如果使用免费版 + 反向代理，风险自负：Webflow 可能暂停你的账号或站点
 
 ***
 
