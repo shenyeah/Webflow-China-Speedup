@@ -25,9 +25,9 @@
 
 ## 两条路线
 
-| <br />      | CF Worker + R2      | EdgeOne Pages      |
-| ----------- | ------------------- | ------------------ |
-| 部署按钮        | [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup)              | ![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2FWebflowcn%2Fedgeflow)             |
+| | CF Worker + R2 | EdgeOne Pages |
+| --- | --- | --- |
+| **部署按钮** | [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup) | [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2FWebflowcn%2Fedgeflow) |
 | **国内延迟**    | 50-150ms            | 5-20ms             |
 | **ICP 备案**  | 不需要                 | 需要                 |
 | **费用**      | 免费                  | 免费起步（300万次/月）      |
@@ -85,10 +85,14 @@ webflow-china-speedup/
 ├── README.md                      # 你在这里
 ├── SKILL.md                       # AI Agent 指令（给 Claude/Cursor 读的）
 ├── packages/
-│   └── cf-worker/                 # 路线 A：CF Worker + R2
-│       ├── README.md              # Dashboard 部署指南
-│       ├── worker.js              # Worker 代码（12 项优化）
-│       └── wrangler.toml.example  # 配置参考
+│   ├── cf-worker/                 # 路线 A：CF Worker + R2
+│   │   ├── README.md              # Dashboard 部署指南
+│   │   ├── worker.js              # Worker 代码（12 项优化）
+│   │   └── wrangler.toml.example  # 配置参考
+│   └── edgeone/                   # 路线 B：EdgeOne Pages
+│       ├── README.md              # 部署指南
+│       ├── edge-functions/_shared/proxy.js  # 边缘函数代理逻辑
+│       └── build.mjs              # 构建脚本
 ├── docs/
 │   ├── comparison.md              # 两条路线详细对比
 │   └── vps.md                     # VPS 方案简述

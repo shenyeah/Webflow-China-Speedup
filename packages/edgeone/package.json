@@ -1,0 +1,13 @@
+{
+  "name": "reverse-proxy-edgeone",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test:local": "node scripts/local-smoke.mjs",
+    "audit:live": "node scripts/live-audit.mjs https://YOUR_DOMAIN_HERE"
+  },
+  "devDependencies": {},
+  "dependencies": {}
+}
