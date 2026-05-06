@@ -5,11 +5,11 @@
       "headers": [
         {
           "key": "X-EdgeOne-Proxy",
-          "value": "edgeflow-reverse-proxy"
+          "value": "webflow-china-speedup-edgeone"
         },
         {
           "key": "X-Proxy-Version",
-          "value": "edgeflow/1.1"
+          "value": "webflow-china-speedup/1.0"
         }
       ]
     }

@@ -3,7 +3,7 @@
 > Webflow 网站在中国大陆打不开？两条路线，一份方案，5 分钟恢复访问。
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup)
-[![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2FWebflowcn%2Fedgeflow)
+[![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup)
 
 ***
 
@@ -17,7 +17,6 @@
 | Google Fonts / Analytics 被墙 | 字体空白，页面阻塞 2-5 秒   |
 | Webflow CDN 无大陆节点           | CSS/JS/图片从海外回源，极慢 |
 | jQuery 走 CloudFront         | 每次页面加载阻塞 500ms-2s |
-| Webflow 水印                  | 免费版右下角 Badge      |
 
 **反向代理不是"优化"——是让网站在大陆能打开的唯一途径。**
 
@@ -27,7 +26,7 @@
 
 | | CF Worker + R2 | EdgeOne Pages |
 | --- | --- | --- |
-| **部署按钮** | [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup) | [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2FWebflowcn%2Fedgeflow) |
+| **部署按钮** | [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup) | [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup) |
 | **国内延迟**    | 50-150ms            | 5-20ms             |
 | **ICP 备案**  | 不需要                 | 需要                 |
 | **费用**      | 免费                  | 免费起步（300万次/月）      |
@@ -63,8 +62,8 @@
 
 点击上方 **使用 EdgeOne Pages 部署** 按钮，跳转 EdgeOne 控制台：
 
-1. 选择「从 Git 导入」，授权 GitHub，选择 `Webflowcn/edgeflow` 仓库
-2. 构建配置全部留空，直接点击创建
+1. 选择「从 Git 导入」，授权 GitHub，选择 `shenyeah/webflow-china-speedup`
+2. Root directory 设置为 `packages/edgeone/`，点击创建
 3. 部署完成后 → 环境变量 → 添加 `WEBFLOW_ORIGIN_HOST` = `你的项目.webflow.io`
 4. 重新部署 → 绑定自定义域名
 
@@ -118,7 +117,6 @@ webflow-china-speedup/
 | 9  | SRI integrity 移除  | CSS 改写后防止哈希校验失败                    |
 | 10 | 视频 poster 补全      | source/srcset/poster-url/style 全覆盖 |
 | 11 | 301/302 拦截        | 修正 Location 头，防止 webflow\.io 泄露    |
-| 12 | Badge 双重移除        | CSS 隐藏 + MutationObserver 删除       |
 
 ***
 
