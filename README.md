@@ -33,7 +33,7 @@
 | **ICP 备案** | 不需要 | 需要 |
 | **费用** | 免费 | 免费起步（300万次/月） |
 | **节点** | 香港/新加坡 | 国内 2800+ |
-| **部署难度** | 中（需配 wrangler） | 低（Git 集成一键部署） |
+| **部署难度** | 低（浏览器全流程操作） | 低（Git 集成一键部署） |
 | **HTML 改写** | HTMLRewriter（流式） | 全量替换 |
 | **静态资源缓存** | R2 永久缓存 | EdgeOne 节点缓存 |
 | **多站点** | 一个 Worker 按 Host 分流 | 需多个 Pages 项目 |
@@ -49,14 +49,18 @@
 ### 路线 A：CF Worker + R2（无需备案）
 
 ```bash
-git clone https://github.com/shenyeah/webflow-china-speedup.git
-cd webflow-china-speedup/packages/cf-worker
-
-# 1. 编辑 wrangler.toml，填入你的 Webflow 项目地址
-# 2. 在 Cloudflare 创建 R2 Bucket
-# 3. 部署
-npx wrangler deploy
+# 点击上方 "Deploy to Cloudflare Workers" 按钮
+# → 自动创建 Worker 项目 → 在 Dashboard 中完成配置
 ```
+
+1. **点击顶部 Deploy 按钮** — 浏览器跳转 Cloudflare Dashboard，自动拉取本仓库
+2. **创建 R2 Bucket** — Dashboard → R2 → Create Bucket，命名如 `webflow-assets`
+3. **绑定 R2 到 Worker** — Worker → Settings → Variables → R2 Bucket Bindings → 关联刚创建的 Bucket
+4. **设置环境变量** — Worker → Settings → Variables，添加 `WEBFLOW_HOST`（你的 `xxx.webflow.io`）
+5. **粘贴 Worker 代码** — Worker → Quick Edit，复制 `packages/cf-worker/worker.js` 的内容粘贴
+6. **绑定域名** — Worker → Triggers → Custom Domains → 添加你的域名
+
+不需要安装任何东西，全程浏览器操作。
 
 [→ 完整部署指南](packages/cf-worker/README.md)
 
