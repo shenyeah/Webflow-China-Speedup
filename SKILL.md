@@ -10,7 +10,7 @@ description: >
 
 # Webflow 网站中国大陆访问加速
 
-> 📦 **GitHub 仓库**：[Webflowcn/webflow-china-speed](https://github.com/Webflowcn/webflow-china-speed) — 统一入口，两条路线覆盖所有场景。
+> 📦 **GitHub 仓库**：[shenyeah/webflow-china-speedup](https://github.com/shenyeah/webflow-china-speedup) — 统一入口，两条路线覆盖所有场景。
 
 ## 两条路线速览
 

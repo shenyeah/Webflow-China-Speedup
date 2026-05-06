@@ -2,8 +2,8 @@
 
 > Webflow 网站在中国大陆打不开？两条路线，一份方案，5 分钟恢复访问。
 
-[![License](https://img.shields.io/github/license/Webflowcn/webflow-china-speed)](LICENSE)
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speed)
+[![License](https://img.shields.io/github/license/shenyeah/webflow-china-speedup)](LICENSE)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup)
 [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2FWebflowcn%2Fedgeflow)
 
 ---
@@ -49,8 +49,8 @@
 ### 路线 A：CF Worker + R2（无需备案）
 
 ```bash
-git clone https://github.com/shenyeah/webflow-china-speed.git
-cd webflow-china-speed/packages/cf-worker
+git clone https://github.com/shenyeah/webflow-china-speedup.git
+cd webflow-china-speedup/packages/cf-worker
 
 # 1. 编辑 wrangler.toml，填入你的 Webflow 项目地址
 # 2. 在 Cloudflare 创建 R2 Bucket
@@ -70,7 +70,7 @@ npx wrangler deploy
 
 ## 不确定选哪个？
 
-用 **[交互式规划器](https://webflowcn.github.io/webflow-china-speed)** 填写你的域名信息，实时检测 ICP 可行性，自动推荐最佳路线。
+用 **[交互式规划器](https://shenyeah.github.io/webflow-china-speedup)** 填写你的域名信息，实时检测 ICP 可行性，自动推荐最佳路线。
 
 ---
 
