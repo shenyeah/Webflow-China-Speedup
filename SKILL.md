@@ -1,10 +1,10 @@
 ---
 name: webflow-china-speedup
 description: >
-  Webflow 中国大陆访问加速。两条路线：CF Worker + R2（无需备案，免费）和 EdgeOne Pages / Edgeflow（需备案，5-20ms）。
+  Webflow 中国大陆访问加速。两条路线：CF Worker + R2（无需备案，免费）和 EdgeOne Pages（需备案，5-20ms）。
   触发场景：Webflow 网站速度慢、中国大陆无法访问、CF Worker 反向代理、Google 资源被屏蔽、Webflow CDN 加速、
   字体加载慢、视频加载慢、jsdmirror 替换、R2 缓存、ICP 备案、EdgeOne 国内节点、双域名双 CDN 架构、DNS 地理分流、
-  多项目扩展、Geo-DNS、Webflow CMS 内容加速、Chinafy 替代方案、edgeflow、webflow-china-speedup。
+  多项目扩展、Geo-DNS、Webflow CMS 内容加速、Chinafy 替代方案、webflow-china-speedup。
   即使用户只是问"我的 Webflow 网站在中国大陆很慢怎么办"也要触发。
 ---
 
@@ -14,16 +14,16 @@ description: >
 
 ## 两条路线速览
 
-| | CF Worker + R2 | EdgeOne Pages (Edgeflow) |
+| | CF Worker + R2 | EdgeOne Pages |
 |---|---|---|
-| **代码位置** | `packages/cf-worker/worker.js` | [github.com/Webflowcn/edgeflow](https://github.com/Webflowcn/edgeflow) |
+| **代码位置** | `packages/cf-worker/worker.js` | EdgeOne 控制台 Git 导入 |
 | **国内延迟** | 50-150ms | 5-20ms |
 | **ICP 备案** | 不需要 | 需要 |
 | **费用** | 免费 | 免费起步 |
 
-**决策**：有 ICP 备案 → EdgeOne。没有 → CF Worker。
+**决策**：有 ICP 备案 → EdgeOne Pages（点击 README 中的 EdgeOne 部署按钮）。没有 → CF Worker。
 
-以下展开 CF Worker 路线的全部细节。EdgeOne 路线见 [Edgeflow 仓库](https://github.com/Webflowcn/edgeflow)。
+以下展开 CF Worker 路线的全部细节。EdgeOne 路线见项目 README 的 5 分钟上手章节。
 
 ## ⚠️ 2025 年重要变化：Webflow 自定义域名被 GFW 封控
 
@@ -390,9 +390,9 @@ Webflow 社区流行的 Lenis 集成方案通常是一个**定制 bundle**，包
 
 ## Worker 代码模板
 
-完整的可直接部署的 Worker 代码见本仓库的 [`references/worker-template.js`](https://github.com/Webflowcn/webflow-china-speed/blob/main/references/worker-template.js)。
+完整的可直接部署的 Worker 代码见本仓库的 [`references/worker-template.js`](https://github.com/shenyeah/webflow-china-speedup/blob/main/references/worker-template.js)。
 
-也可以直接从 [GitHub Releases](https://github.com/Webflowcn/webflow-china-speed/releases) 下载完整压缩包（含 SKILL.md + Worker 模板 + 配置示例），解压后作为参考直接使用。
+也可以直接从 [GitHub Releases](https://github.com/shenyeah/webflow-china-speedup/releases) 下载完整压缩包（含 SKILL.md + Worker 模板 + 配置示例），解压后作为参考直接使用。
 
 ### 命名规范
 
