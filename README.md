@@ -22,6 +22,38 @@
 
 ***
 
+## 环境变量参考
+
+### 通用
+
+| 变量名 | 必填 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `WEBFLOW_ORIGIN_HOST` | **是** | 无 | Webflow 项目地址，如 `my-site.webflow.io` |
+
+### CF Worker 路线
+
+在 Cloudflare Dashboard → Worker → Settings → Variables 中设置。
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `WEBFLOW_HOST` | 无 | Webflow 项目地址（等于通用 `WEBFLOW_ORIGIN_HOST`） |
+| `R2_PUBLIC_BASE` | 无 | R2 Bucket 公开访问 URL |
+
+### EdgeOne 路线
+
+在 EdgeOne 控制台 → 项目 → 环境变量 中设置。
+
+| 变量名 | 默认值 | 什么时候需要改 |
+|--------|--------|-------------|
+| `MIRROR_JQUERY` | `https://lib.baomitu.com/jquery/3.5.1/jquery.min.js` | 如果 `lib.baomitu.com` 在国内失效，改为 `https://cdn.jsdmirror.com/npm/jquery@3.5.1/dist/jquery.min.js` |
+| `MIRROR_JSD_MIRROR` | `https://cdn.jsdmirror.com` | jsDelivr 镜像，失效后改为 `https://unpkg.zhimg.com` |
+| `MIRROR_WEBFONT` | `https://cdn.jsdelivr.net/npm/webfontloader@1.6.26/webfontloader.js` | WebFont loader 备用地址 |
+| `ASSET_PROXY_PREFIX` | `/__eo_asset_v3__` | 静态资源代理路径前缀，与项目路由冲突时才改 |
+
+> **CDN 失效排查**：部署后打开页面，如果字体图标显示为方框（□），说明某个镜像 CDN 在国内不可用。在浏览器 DevTools → Network 中查看超时的请求域名，换一个可用的镜像地址即可。
+
+***
+
 ## 两条路线
 
 | | CF Worker + R2 | EdgeOne Pages |
