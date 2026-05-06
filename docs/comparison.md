@@ -14,12 +14,12 @@
     └── 视频 → Range 请求支持，分段返回
 ```
 
-### EdgeOne Pages（Edgeflow）
+### EdgeOne Pages（EdgeOne Pages）
 
 ```
 大陆用户 → 自定义域名
   → EdgeOne 国内节点（2800+）
-    → EdgeFlow 代理函数
+    → EdgeOne 边缘函数 代理函数
       ├── rewriteDomainTokens() → URL 域名替换
       ├── applyChinaSpeedRewrites() → Google Fonts/GA/jQuery/CDN 替换
       ├── stripWebflowBranding() → Badge/水印移除
@@ -31,7 +31,7 @@
 
 ## 改写能力对比
 
-| 改写项 | CF Worker | EdgeOne (Edgeflow) |
+| 改写项 | CF Worker | EdgeOne (EdgeOne Pages) |
 |--------|-----------|-------------------|
 | Google Fonts → 国内镜像 | ✅ `fonts.googleapis.cn` | ✅ `fonts.googleapis.cn` |
 | GA/GTM 移除 | ✅ HTMLRewriter | ✅ 文本替换 |

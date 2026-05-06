@@ -26,15 +26,14 @@
 
 ## 两条路线
 
-| | CF Worker + R2 | EdgeOne Pages (Edgeflow) |
+| | CF Worker + R2 | EdgeOne Pages |
 |---|---|---|
-| **部署按钮** | [→ Cloudflare Dashboard](https://dash.cloudflare.com/) | [→ Edgeflow 仓库](https://github.com/Webflowcn/edgeflow) |
 | **国内延迟** | 50-150ms | 5-20ms |
 | **ICP 备案** | 不需要 | 需要 |
 | **费用** | 免费 | 免费起步（300万次/月） |
 | **节点** | 香港/新加坡 | 国内 2800+ |
-| **部署难度** | 低（浏览器全流程操作） | 低（Git 集成一键部署） |
-| **HTML 改写** | HTMLRewriter（流式） | 全量替换 |
+| **部署方式** | 浏览器操作，无需安装 | EdgeOne 控制台 Git 导入 |
+| **HTML 改写** | HTMLRewriter（流式） | 边缘函数（全量替换） |
 | **静态资源缓存** | R2 永久缓存 | EdgeOne 节点缓存 |
 | **多站点** | 一个 Worker 按 Host 分流 | 需多个 Pages 项目 |
 
@@ -46,29 +45,30 @@
 
 ## 5 分钟上手
 
-### 路线 A：CF Worker + R2（无需备案）
+### 路线 A：CF Worker + R2（无需备案，浏览器操作）
 
-```bash
-# 点击上方 "Deploy to Cloudflare Workers" 按钮
-# → 自动创建 Worker 项目 → 在 Dashboard 中完成配置
-```
+点击上方 **Deploy to Cloudflare Workers** 按钮，Cloudflare Dashboard 会自动创建 Worker 项目，然后：
 
-1. **点击顶部 Deploy 按钮** — 浏览器跳转 Cloudflare Dashboard，自动拉取本仓库
-2. **创建 R2 Bucket** — Dashboard → R2 → Create Bucket，命名如 `webflow-assets`
-3. **绑定 R2 到 Worker** — Worker → Settings → Variables → R2 Bucket Bindings → 关联刚创建的 Bucket
-4. **设置环境变量** — Worker → Settings → Variables，添加 `WEBFLOW_HOST`（你的 `xxx.webflow.io`）
-5. **粘贴 Worker 代码** — Worker → Quick Edit，复制 `packages/cf-worker/worker.js` 的内容粘贴
-6. **绑定域名** — Worker → Triggers → Custom Domains → 添加你的域名
+1. **创建 R2 Bucket** — Dashboard → R2 → Create Bucket，命名如 `webflow-assets`
+2. **粘贴 Worker 代码** — Worker → Quick Edit，复制 [`packages/cf-worker/worker.js`](packages/cf-worker/worker.js) 的全部内容粘贴进去 → Save and Deploy
+3. **绑定 R2** — Worker → Settings → Variables → R2 Bucket Bindings → 添加绑定 `MY_BUCKET` → 选择刚创建的 Bucket
+4. **设置环境变量** — Worker → Settings → Variables → 添加 `WEBFLOW_HOST`（你的 `xxx.webflow.io`）
+5. **绑定域名** — Worker → Triggers → Custom Domains → 添加你的域名
 
 不需要安装任何东西，全程浏览器操作。
 
-[→ 完整部署指南](packages/cf-worker/README.md)
+[→ 完整部署指南（截图级步骤）](packages/cf-worker/README.md)
 
-### 路线 B：EdgeOne Pages（需要备案）
+### 路线 B：EdgeOne Pages（需要 ICP 备案，Git 导入）
 
-访问 [Edgeflow 仓库](https://github.com/Webflowcn/edgeflow)，Fork → 导入 EdgeOne Pages → 设置环境变量，30 秒完成。
+点击上方 **使用 EdgeOne Pages 部署** 按钮，跳转 EdgeOne 控制台：
 
-[→ Edgeflow 部署指南](https://github.com/Webflowcn/edgeflow#5-分钟部署指南)
+1. 选择「从 Git 导入」，授权 GitHub，选择 `Webflowcn/edgeflow` 仓库
+2. 构建配置全部留空，直接点击创建
+3. 部署完成后 → 环境变量 → 添加 `WEBFLOW_ORIGIN_HOST` = `你的项目.webflow.io`
+4. 重新部署 → 绑定自定义域名
+
+部署约 30 秒完成，不需要本地操作。
 
 ---
 
@@ -86,16 +86,15 @@ webflow-china-speedup/
 ├── SKILL.md                       # AI Agent 指令（给 Claude/Cursor 读的）
 ├── packages/
 │   └── cf-worker/                 # 路线 A：CF Worker + R2
-│       ├── README.md              # 部署指南
+│       ├── README.md              # Dashboard 部署指南
 │       ├── worker.js              # Worker 代码（12 项优化）
-│       ├── wrangler.toml.example  # 配置模板
-│       └── package.json
+│       └── wrangler.toml.example  # 配置参考
 ├── docs/
-│   ├── comparison.md              # 详细对比
+│   ├── comparison.md              # 两条路线详细对比
 │   └── vps.md                     # VPS 方案简述
 ├── interactive-guide/             # 交互式规划器（即将上线）
-└── references/                    # 原始参考文件
-    └── worker-template.js
+└── references/
+    └── worker-template.js         # Worker 代码（历史版本）
 ```
 
 ---
