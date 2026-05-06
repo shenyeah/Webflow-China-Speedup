@@ -27,8 +27,9 @@
 1. 打开 [腾讯云 EdgeOne 控制台](https://console.cloud.tencent.com/edgeone)
 2. 左侧菜单 → **Pages** → **新建项目**
 3. 选择「从 Git 导入」，授权 GitHub
-4. 仓库地址：`https://github.com/Webflowcn/edgeflow`（会自动拉取）
-5. **构建配置全部留空**，直接创建
+4. 仓库地址：`https://github.com/shenyeah/webflow-china-speedup`（会自动拉取）
+5. Root directory 设置为 `packages/edgeone/`
+6. **构建配置全部留空**，直接创建
 6. 约 30 秒部署完成
 
 ### 第 2 步：设置环境变量
