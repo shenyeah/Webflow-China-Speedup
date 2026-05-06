@@ -11,46 +11,30 @@
 
 2025 年 11 月起，Webflow 自定义域名在中国大陆被 GFW 封控 — **不是慢，是完全打不开**。
 
-| 问题                          | 影响                |
-| --------------------------- | ----------------- |
-| GFW 封控 `cdn.webflow.com`    | 自定义域名完全不可访问       |
-| Google Fonts / Analytics 被墙 | 字体空白，页面阻塞 2-5 秒   |
-| Webflow CDN 无大陆节点           | CSS/JS/图片从海外回源，极慢 |
-| jQuery 走 CloudFront         | 每次页面加载阻塞 500ms-2s |
+| 问题 | 影响 |
+|------|------|
+| GFW 封控 `cdn.webflow.com` | 自定义域名完全不可访问 |
+| Google Fonts / Analytics 被墙 | 字体空白，页面阻塞 2-5 秒 |
+| Webflow CDN 无大陆节点 | CSS/JS/图片从海外回源，极慢 |
+| jQuery 走 CloudFront | 每次页面加载阻塞 500ms-2s |
 
 **反向代理不是"优化"——是让网站在大陆能打开的唯一途径。**
 
 ***
 
-## 环境变量参考
+## 为什么要用 webflow.io 地址而不是发布域名
 
-### 通用
+Webflow 自定义域名的 DNS 指向 `cdn.webflow.com`（Cloudflare IP），这个出口被 GFW 封锁，这也是为什么你的网站在大陆打不开的根本原因。详见 [Webflow 官方文档](https://help.webflow.com/hc/en-us/articles/33961315914515-Connect-your-Cloudflare-domain-to-Webflow)。
 
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `WEBFLOW_ORIGIN_HOST` | **是** | 无 | Webflow 项目地址，如 `my-site.webflow.io` |
+反向代理方案通过 `xxx.webflow.io` 地址访问源站——这个域名走的是另一组 IP，目前在大陆仍可访问。代理负责从 `webflow.io` 拉取内容、改写被墙的资源、通过国内节点返回给用户。
 
-### CF Worker 路线
+**⚠️ 关于 Webflow 使用条款**
 
-在 Cloudflare Dashboard → Worker → Settings → Variables 中设置。
+Webflow 的 [Terms of Service](https://webflow.com/legal/terms) 要求发布到自定义域名的站点使用付费计划。通过反向代理绕过 `cdn.webflow.com` 在技术上可行，但如果你使用的是 **Webflow 免费版 (Starter Plan)** 并通过本方案发布到自定义域名，这可能违反 Webflow 的服务条款。建议：
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `WEBFLOW_HOST` | 无 | Webflow 项目地址（等于通用 `WEBFLOW_ORIGIN_HOST`） |
-| `R2_PUBLIC_BASE` | 无 | R2 Bucket 公开访问 URL |
-
-### EdgeOne 路线
-
-在 EdgeOne 控制台 → 项目 → 环境变量 中设置。
-
-| 变量名 | 默认值 | 什么时候需要改 |
-|--------|--------|-------------|
-| `MIRROR_JQUERY` | `https://lib.baomitu.com/jquery/3.5.1/jquery.min.js` | 如果 `lib.baomitu.com` 在国内失效，改为 `https://cdn.jsdmirror.com/npm/jquery@3.5.1/dist/jquery.min.js` |
-| `MIRROR_JSD_MIRROR` | `https://cdn.jsdmirror.com` | jsDelivr 镜像，失效后改为 `https://unpkg.zhimg.com` |
-| `MIRROR_WEBFONT` | `https://cdn.jsdelivr.net/npm/webfontloader@1.6.26/webfontloader.js` | WebFont loader 备用地址 |
-| `ASSET_PROXY_PREFIX` | `/__eo_asset_v3__` | 静态资源代理路径前缀，与项目路由冲突时才改 |
-
-> **CDN 失效排查**：部署后打开页面，如果字体图标显示为方框（□），说明某个镜像 CDN 在国内不可用。在浏览器 DevTools → Network 中查看超时的请求域名，换一个可用的镜像地址即可。
+- 购买至少一个 **Site Plan**（Basic / CMS / Business），这是合规使用 Webflow 的基础
+- 本方案的目的是绕过 GFW 的**地理限制**，不是绕过 Webflow 的**收费机制**
+- 如果使用免费版 + 反向代理，风险自负：Webflow 可能暂停你的账号或站点
 
 ***
 
@@ -58,15 +42,14 @@
 
 | | CF Worker + R2 | EdgeOne Pages |
 | --- | --- | --- |
-| **部署按钮** | [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup) | [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup) |
-| **国内延迟**    | 50-150ms            | 5-20ms             |
-| **ICP 备案**  | 不需要                 | 需要                 |
-| **费用**      | 免费                  | 免费起步（300万次/月）      |
-| **节点**      | 香港/新加坡              | 国内 2800+           |
-| **部署方式**    | 浏览器操作，无需安装          | EdgeOne 控制台 Git 导入 |
-| **HTML 改写** | HTMLRewriter（流式）    | 边缘函数（全量替换）         |
-| **静态资源缓存**  | R2 永久缓存             | EdgeOne 节点缓存       |
-| **多站点**     | 一个 Worker 按 Host 分流 | 需多个 Pages 项目       |
+| **国内延迟** | 50-150ms | 5-20ms |
+| **ICP 备案** | 不需要 | 需要 |
+| **费用** | 免费 | 免费起步（300万次/月） |
+| **节点** | 香港/新加坡 | 国内 2800+ |
+| **部署方式** | 浏览器操作，无需安装 | EdgeOne 控制台 Git 导入 |
+| **HTML 改写** | HTMLRewriter（流式） | 边缘函数（全量替换） |
+| **静态资源缓存** | R2 永久缓存 | EdgeOne 节点缓存 |
+| **方案教程** | [→ CF Worker 部署指南](packages/cf-worker/README.md) | [→ EdgeOne Pages 部署指南](packages/edgeone/README.md) |
 
 **怎么选？** 有 ICP 备案 → EdgeOne（延迟最低）。没有备案 → CF Worker（免费，够用）。
 
@@ -88,7 +71,7 @@
 
 不需要安装任何东西，全程浏览器操作。
 
-[→ 完整部署指南（截图级步骤）](packages/cf-worker/README.md)
+[→ 完整部署指南](packages/cf-worker/README.md)
 
 ### 路线 B：EdgeOne Pages（需要 ICP 备案，Git 导入）
 
@@ -101,11 +84,7 @@
 
 部署约 30 秒完成，不需要本地操作。
 
-***
-
-## 不确定选哪个？
-
-用 **[交互式规划器](https://shenyeah.github.io/webflow-china-speedup)** 填写你的域名信息，实时检测 ICP 可行性，自动推荐最佳路线。
+[→ 完整部署指南（含环境变量说明）](packages/edgeone/README.md)
 
 ***
 
@@ -121,34 +100,32 @@ webflow-china-speedup/
 │   │   ├── worker.js              # Worker 代码（12 项优化）
 │   │   └── wrangler.toml.example  # 配置参考
 │   └── edgeone/                   # 路线 B：EdgeOne Pages
-│       ├── README.md              # 部署指南
+│       ├── README.md              # 部署指南（含环境变量 + CDN 失效排查）
 │       ├── edge-functions/_shared/proxy.js  # 边缘函数代理逻辑
 │       └── build.mjs              # 构建脚本
 ├── docs/
 │   ├── comparison.md              # 两条路线详细对比
 │   └── vps.md                     # VPS 方案简述
-├── interactive-guide/             # 交互式规划器（即将上线）
 └── references/
     └── worker-template.js         # Worker 代码（历史版本）
 ```
 
 ***
 
-## 覆盖的优化（12 项）
+## 覆盖的优化
 
-| #  | 优化项               | 说明                                 |
-| -- | ----------------- | ---------------------------------- |
-| 1  | HTML 缓存头          | 边缘缓存 5 分钟，避免每次回源                   |
-| 2  | Google 资源清理       | 移除 preconnect/dns-prefetch/GTM/GA  |
-| 3  | CSS @import 过滤    | 删除 CSS 内的 Google Fonts 引用          |
-| 4  | R2 query string 键 | 带版本参数的资源正确缓存                       |
-| 5  | jQuery 镜像替换       | CloudFront → jsdmirror（国内 CDN）     |
-| 6  | 视频 URL 重写         | data-video-urls 纳入 R2 缓存           |
-| 7  | HTTP Range 支持     | 视频分段加载、立即起播                        |
-| 8  | CSS 内部 URL 改写     | @font-face/背景图不走 Fastly            |
-| 9  | SRI integrity 移除  | CSS 改写后防止哈希校验失败                    |
-| 10 | 视频 poster 补全      | source/srcset/poster-url/style 全覆盖 |
-| 11 | 301/302 拦截        | 修正 Location 头，防止 webflow\.io 泄露    |
+两种路线均自动覆盖以下优化（具体实现方式不同）：
 
-***
-
+| # | 优化项 | 说明 |
+|---|--------|------|
+| 1 | HTML 缓存头 | 边缘缓存 5 分钟，避免每次回源 |
+| 2 | Google 资源清理 | 移除 preconnect/dns-prefetch/GTM/GA |
+| 3 | CSS @import 过滤 | 删除 CSS 内的 Google Fonts 引用 |
+| 4 | R2 query string 键 | 带版本参数的资源正确缓存 |
+| 5 | jQuery 镜像替换 | CloudFront → 国内 CDN |
+| 6 | 视频 URL 重写 | data-video-urls 纳入缓存 |
+| 7 | HTTP Range 支持 | 视频分段加载、立即起播 |
+| 8 | CSS 内部 URL 改写 | @font-face/背景图不走 Fastly |
+| 9 | SRI integrity 移除 | CSS 改写后防止哈希校验失败 |
+| 10 | 视频 poster 补全 | source/srcset/poster-url/style 全覆盖 |
+| 11 | 301/302 拦截 | 修正 Location 头，防止 webflow.io 泄露 |
