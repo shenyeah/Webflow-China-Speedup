@@ -1,4 +1,4 @@
-# webflow-china-speedup
+# Webflow-China-Speedup
 
 > Webflow 网站在中国大陆打不开？两条路线，一份方案，5 分钟恢复访问。
 
@@ -9,14 +9,14 @@
 
 ## 问题
 
-2025 年 11 月起，Webflow 自定义域名在中国大陆被 GFW 封控 — **不是慢，是完全打不开**。
+2025 年 11 月起，Webflow 自定义域名(绑定的域名)在中国大陆被 GFW 封控 — **不是慢，是完全打不开**。这并不代表Webflow的服务被禁止，而是GFW常规的批次限制， Webflow 所用的IP刚好在这个批次中。
 
 | 问题 | 影响 |
 |------|------|
 | GFW 封控 `cdn.webflow.com` | 自定义域名完全不可访问 |
 | Google Fonts / Analytics 被墙 | 字体空白，页面阻塞 2-5 秒 |
 | Webflow CDN 无大陆节点 | CSS/JS/图片从海外回源，极慢 |
-| jQuery 走 CloudFront | 每次页面加载阻塞 500ms-2s |
+| jQuery 走 CloudFront（亚马逊的CDN） | 每次页面加载阻塞 500ms-2s |
 
 **反向代理不是"优化"——是让网站在大陆能打开的唯一途径。**
 
