@@ -1,0 +1,12 @@
+# 用于 "Deploy to Cloudflare Workers" 按钮的一键部署
+# 部署完成后，请在 Cloudflare Dashboard 中完成以下配置：
+#   1. 设置环境变量 WEBFLOW_HOST = 你的 xxx.webflow.io
+#   2. 创建 R2 Bucket 并添加到绑定 MY_BUCKET
+# 详细步骤见 packages/cf-worker/README.md
+
+name = "webflow-china-speedup"
+main = "packages/cf-worker/worker.js"
+compatibility_date = "2026-05-07"
+
+[placement]
+mode = "smart"
