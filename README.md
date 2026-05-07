@@ -38,8 +38,6 @@
 
 **怎么选？** 有 ICP 备案 → EdgeOne（延迟最低）。没有备案 → CF Worker（免费，够用）。
 
-> 还有一种 VPS 反代方案（Caddy/Nginx，¥68/年，20-50ms），适合手头已有国内服务器的场景。详见 [docs/vps.md](docs/vps.md)。
-
 ***
 
 ## 5 分钟上手
@@ -78,7 +76,7 @@
 ```
 webflow-china-speedup/
 ├── README.md                      # 你在这里
-├── SKILL.md                       # AI Agent 指令（给 Claude/Cursor 读的）
+├── wrangler.toml                  # Cloudflare Workers 部署配置
 ├── packages/
 │   ├── cf-worker/                 # 路线 A：CF Worker + R2
 │   │   ├── README.md              # Dashboard 部署指南
@@ -88,11 +86,6 @@ webflow-china-speedup/
 │       ├── README.md              # 部署指南（含环境变量 + CDN 失效排查）
 │       ├── edge-functions/_shared/proxy.js  # 边缘函数代理逻辑
 │       └── build.mjs              # 构建脚本
-├── docs/
-│   ├── comparison.md              # 两条路线详细对比
-│   └── vps.md                     # VPS 方案简述
-└── references/
-    └── worker-template.js         # Worker 代码（历史版本）
 ```
 
 ***
