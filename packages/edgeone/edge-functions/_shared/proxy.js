@@ -3,6 +3,7 @@ const DEFAULT_CONFIG = {
   assetProxyPrefix: "/__eo_asset_v3__",
   proxyableHosts: [
     "cdn.prod.website-files.com",
+    "assets.website-files.com",
     "assets-global.website-files.com",
     "uploads-ssl.webflow.com",
     "fonts.googleapis.com",
@@ -330,10 +331,10 @@ function applyChinaSpeedRewrites(input, requestUrl, cfg) {
     `${cfg.mirrorJsdMirror}/$1/`
   );
 
-  // Replace cdnjs CDN with JSDMirror
+  // Replace cdnjs CDN with JSDMirror (same /ajax/libs/ path, not /npm/)
   output = output.replace(
     /https?:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\//gi,
-    `${cfg.mirrorJsdMirror}/npm/`
+    `${cfg.mirrorJsdMirror}/ajax/libs/`
   );
 
   // GSAP — already proxied via rewriteDomainTokens, keep explicit patterns for version flexibility
