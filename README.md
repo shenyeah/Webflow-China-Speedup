@@ -50,6 +50,9 @@
 2. **粘贴 Worker 代码** — Worker → Quick Edit，复制 [`packages/cf-worker/worker.js`](packages/cf-worker/worker.js) 的全部内容粘贴进去 → Save and Deploy
 3. **绑定 R2** — Worker → Settings → Variables → R2 Bucket Bindings → 添加绑定 `MY_BUCKET` → 选择刚创建的 Bucket
 4. **设置环境变量** — Worker → Settings → Variables → 添加 `WEBFLOW_HOST`（你的 `xxx.webflow.io`）
+
+   > **可选**：先运行 `npm run build`，然后复制 `packages/cf-worker/dist/worker.js` 粘贴到 Dashboard。构建后的文件已内置配置文件（`edgeflow.config.js`）的值，无需再逐个填写环境变量。
+
 5. **绑定域名** — Worker → Triggers → Custom Domains → 添加你的域名
 
 不需要安装任何东西，全程浏览器操作。

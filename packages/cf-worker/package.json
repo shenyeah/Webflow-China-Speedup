@@ -2,6 +2,11 @@
   "name": "@webflow-china-speedup/cf-worker",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Cloudflare Worker + R2 reverse proxy for Webflow sites in China",
-  "main": "worker.js"
+  "main": "worker.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "sync:check": "node ../../scripts/sync-check.mjs"
+  }
 }
