@@ -2,8 +2,8 @@ import { execSync } from "node:child_process";
 
 const target = process.argv[2];
 if (!target) {
-  console.error("用法: node scripts/sync-check.mjs https://your-domain.com");
-  console.error("  或: node scripts/sync-check.mjs https://your-domain.workers.dev");
+  console.error("用法: node packages/cf-worker/scripts/sync-check.mjs https://your-domain.com");
+  console.error("  或: node packages/cf-worker/scripts/sync-check.mjs https://your-domain.workers.dev");
   process.exit(1);
 }
 
@@ -45,7 +45,7 @@ async function main() {
   const deployedVer = deployed.version || "";
   if (deployedVer === "dev") {
     console.log("\n⚠️  线上版本为 'dev'——未运行构建步骤，无法验证同步性。");
-    console.log("   建议: node packages/cf-worker/build.mjs 然后重新部署 dist/worker.js");
+    console.log("   建议: node build.mjs 然后重新部署 dist/worker.js");
     process.exit(0);
   }
 
