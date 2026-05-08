@@ -139,7 +139,7 @@ export default {
             if (isCss) {
               let cssText = await upstreamResp.text();
               cssText = cssText.replace(
-                /https:\/\/(cdn\.prod\.website-files\.com|assets\.website-files\.com|uploads-ssl\.webflow\.com)/g,
+                /https:\/\/[\w.-]*(?:website-files\.com|uploads-ssl\.webflow\.com)/g,
                 (_, host) => `/_cdn/${host}`
               );
               newHeaders.set("content-type", "text/css; charset=UTF-8");
@@ -286,7 +286,7 @@ export default {
             const style = el.getAttribute("style");
             if (style && style.includes("background-image")) {
               const rewritten = style.replace(
-                /url\(["']?(https:\/\/(?:cdn\.prod\.website-files\.com|assets\.website-files\.com|uploads-ssl\.webflow\.com)[^"')]*?)["']?\)/g,
+                /url\(["']?(https:\/\/[\w.-]*(?:website-files\.com|webflow\.com)[^"')]*?)["']?\)/g,
                 (_, u) => `url("${rewriteAssetURL(u)}")`
               );
               el.setAttribute("style", rewritten);
@@ -317,7 +317,7 @@ export default {
 
       // 重写资产域名到 /_cdn/ 路径（含 Webflow jQuery CloudFront 域名）
       cssText = cssText.replace(
-        /https:\/\/(cdn\.prod\.website-files\.com|assets\.website-files\.com|uploads-ssl\.webflow\.com)/g,
+        /https:\/\/[\w.-]*(?:website-files\.com|uploads-ssl\.webflow\.com)/g,
         (match) => {
           const host = match.replace("https://", "");
           return `/_cdn/${host}`;
@@ -357,13 +357,9 @@ function rewriteAssetURL(u) {
     }
     const parsed = new URL(u, "https://dummy.base");
     const host = parsed.hostname;
-    const hosts = [
-      "cdn.prod.website-files.com",
-      "assets.website-files.com",
-      "uploads-ssl.webflow.com"
-      // d3e54v103j8qbb.cloudfront.net 已在 HTMLRewriter 里直接替换为 jsdmirror，无需走 /_cdn/
-    ];
-    if (hosts.includes(host)) {
+    const webflowSuffixes = ["website-files.com", "uploads-ssl.webflow.com"];
+    const isWebflowCDN = webflowSuffixes.some(s => host.endsWith(s));
+    if (isWebflowCDN) {
       return `/_cdn/${host}${parsed.pathname}${parsed.search}`;
     }
     return u;
