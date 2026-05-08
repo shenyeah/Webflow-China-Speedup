@@ -19,10 +19,9 @@
  */
 
 // Build stamp — injected by build.mjs from edgeflow.config.js + git
-const BUILD_STAMP = {
-  version: "__BUILD_VERSION__",
-  deployTime: "__DEPLOY_TIME__"
-};
+// Build stamp — set by build.mjs; falls back gracefully when deployed without build
+const BUILD_VERSION = "__BUILD_COMMIT__";
+const BUILD_DEPLOY_TIME = "__BUILD_DEPLOY_TIME__";
 
 export default {
   async fetch(req, env, ctx) {
@@ -34,8 +33,8 @@ export default {
       return Response.json({
         ok: true,
         runtime: "cloudflare-worker",
-        version: BUILD_STAMP.version,
-        deployTime: BUILD_STAMP.deployTime,
+        version: BUILD_VERSION.startsWith("__") ? (env.BUILD_VERSION || "dev") : BUILD_VERSION,
+        deployTime: BUILD_DEPLOY_TIME.startsWith("__") ? (env.DEPLOY_TIME || "N/A") : BUILD_DEPLOY_TIME,
         host: url.hostname
       });
     }

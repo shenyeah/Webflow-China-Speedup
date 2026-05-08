@@ -23,8 +23,8 @@ const config = {
 let workerCode = readFileSync("worker.js", "utf-8");
 
 // --- Replace placeholders ---
-workerCode = workerCode.replace(/"__BUILD_VERSION__"/g, JSON.stringify(buildVersion));
-workerCode = workerCode.replace(/"__DEPLOY_TIME__"/g, JSON.stringify(deployTime));
+workerCode = workerCode.replace(/"__BUILD_COMMIT__"/g, JSON.stringify(buildVersion));
+workerCode = workerCode.replace(/"__BUILD_DEPLOY_TIME__"/g, JSON.stringify(deployTime));
 workerCode = workerCode.replace(/"__WEBFLOW_HOST__"/g, JSON.stringify(config.webflowHost));
 workerCode = workerCode.replace(/"__R2_PUBLIC_URL__"/g, JSON.stringify(config.r2PublicUrl));
 // Also replace the old-style placeholders (for backward compatibility)
