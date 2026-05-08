@@ -8,16 +8,11 @@ try {
   buildVersion = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
 } catch { /* not a git repo */ }
 
-// --- Read user config from repo root, fall back to env / defaults ---
+// --- Read user config from local edgeflow.config.js, fall back to env / defaults ---
 let userConfig = {};
-const repoRoot = new URL("../../", import.meta.url);
 try {
-  userConfig = (await import(new URL("edgeflow.config.js", repoRoot))).default || {};
-} catch {
-  try {
-    userConfig = (await import(new URL("edgeflow.config.js", import.meta.url))).default || {};
-  } catch { /* no config file */ }
-}
+  userConfig = (await import(new URL("./edgeflow.config.js", import.meta.url))).default || {};
+} catch { /* no config file */ }
 
 const config = {
   webflowHost: process.env.WEBFLOW_HOST || userConfig.webflowHost || "__WEBFLOW_HOST__",

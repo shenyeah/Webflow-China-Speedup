@@ -7,6 +7,6 @@
   "main": "worker.js",
   "scripts": {
     "build": "node build.mjs",
-    "sync:check": "node ../../scripts/sync-check.mjs"
+    "sync:check": "node scripts/sync-check.mjs"
   }
 }

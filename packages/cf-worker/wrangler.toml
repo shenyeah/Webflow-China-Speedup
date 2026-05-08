@@ -1,0 +1,17 @@
+# Webflow 中国大陆加速 — CF Worker 配置
+# 部署方式：点 Deploy 按钮 → 自动创建 Worker + R2 Bucket + 绑定
+# 只需要在 Deploy 配置页填写 WEBFLOW_HOST 环境变量
+
+name = "webflow-china-speedup"
+main = "worker.js"
+compatibility_date = "2026-05-07"
+
+[placement]
+mode = "smart"
+
+[vars]
+WEBFLOW_HOST = "REPLACE_WITH_YOUR_WEBFLOW_HOST"
+
+[[r2_buckets]]
+binding = "MY_BUCKET"
+bucket_name = "webflow-china-speedup-assets"
