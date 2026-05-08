@@ -18,16 +18,34 @@
  * [12] Webflow Badge 用 CSS + MutationObserver 双重移除（Badge 是 JS 动态注入的，HTMLRewriter 无法直接删除）
  */
 
+// Build stamp — injected by build.mjs from edgeflow.config.js + git
+const BUILD_STAMP = {
+  version: "__BUILD_VERSION__",
+  deployTime: "__DEPLOY_TIME__"
+};
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const pathname = url.pathname;
-    const WEBFLOW_HOST = "REPLACE_WITH_YOUR_WEBFLOW_HOST"; // 例：mysite.webflow.io
+
+    // Version endpoint (for online/offline sync check)
+    if (pathname === "/_debug") {
+      return Response.json({
+        ok: true,
+        runtime: "cloudflare-worker",
+        version: BUILD_STAMP.version,
+        deployTime: BUILD_STAMP.deployTime,
+        host: url.hostname
+      });
+    }
+
+    const WEBFLOW_HOST = env.WEBFLOW_HOST || "__WEBFLOW_HOST__";
     const CUSTOM_DOMAIN = url.hostname; // 用户的自定义域名（从请求自动获取）
 
     // 1️⃣ 静态资源处理（robots.txt / sitemap.xml 从 R2 Public 返回）
     if (pathname === "/robots.txt" || pathname === "/sitemap.xml") {
-      const r2Base = "REPLACE_WITH_YOUR_R2_PUBLIC_URL" // 例：https://pub-xxxx.r2.dev;
+      const r2Base = env.R2_PUBLIC_BASE || "__R2_PUBLIC_URL__";
       const fileResponse = await fetch(`${r2Base}${pathname}`, { cf: { cacheEverything: true } });
       if (fileResponse.ok) {
         const contentType = pathname.endsWith(".xml") ? "application/xml" : "text/plain";
