@@ -2,9 +2,10 @@
 
 > Webflow 网站在中国大陆打不开？两条路线，一份方案，5 分钟恢复访问。
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker)
-[![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup) — 🇨🇳 中国版
-[![Deploy to EdgeOne Pages](https://raw.githubusercontent.com/shenyeah/webflow-china-speedup/refs/heads/main/assets/deploy-edgeone-pages.svg)](https://edgeone.ai/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup) — 🌐 国际版
+<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker"><img src="https://deploy.workers.cloudflare.com/button" height="32" alt="Deploy to Cloudflare Workers"></a>
+<a href="https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup"><img src="https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg" height="32" alt="使用 EdgeOne Pages 部署"></a>
+
+🌐 <a href="https://edgeone.ai/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup">EdgeOne International Deploy →</a>（无需 ICP 备案，使用 EdgeOne 国际版控制台）
 
 ***
 
