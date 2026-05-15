@@ -8,16 +8,11 @@ try {
   buildVersion = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
 } catch { /* not a git repo */ }
 
-// --- Read user config from repo root, fall back to env / defaults ---
+// --- Read user config from local edgeflow.config.js, fall back to env / defaults ---
 let userConfig = {};
-const repoRoot = new URL("../../", import.meta.url);
 try {
-  userConfig = (await import(new URL("edgeflow.config.js", repoRoot))).default || {};
-} catch {
-  try {
-    userConfig = (await import(new URL("edgeflow.config.js", import.meta.url))).default || {};
-  } catch { /* no config file */ }
-}
+  userConfig = (await import(new URL("./edgeflow.config.js", import.meta.url))).default || {};
+} catch { /* no config file */ }
 
 const config = {
   webflowHost: process.env.WEBFLOW_HOST || userConfig.webflowHost || "__WEBFLOW_HOST__",
@@ -28,8 +23,8 @@ const config = {
 let workerCode = readFileSync("worker.js", "utf-8");
 
 // --- Replace placeholders ---
-workerCode = workerCode.replace(/"__BUILD_VERSION__"/g, JSON.stringify(buildVersion));
-workerCode = workerCode.replace(/"__DEPLOY_TIME__"/g, JSON.stringify(deployTime));
+workerCode = workerCode.replace(/"__BUILD_COMMIT__"/g, JSON.stringify(buildVersion));
+workerCode = workerCode.replace(/"__BUILD_DEPLOY_TIME__"/g, JSON.stringify(deployTime));
 workerCode = workerCode.replace(/"__WEBFLOW_HOST__"/g, JSON.stringify(config.webflowHost));
 workerCode = workerCode.replace(/"__R2_PUBLIC_URL__"/g, JSON.stringify(config.r2PublicUrl));
 // Also replace the old-style placeholders (for backward compatibility)

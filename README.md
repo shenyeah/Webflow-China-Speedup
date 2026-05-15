@@ -2,7 +2,7 @@
 
 > Webflow 网站在中国大陆打不开？两条路线，一份方案，5 分钟恢复访问。
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker)
 [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup)
 
 ***
@@ -31,7 +31,7 @@
 | **ICP 备案** | 不需要 | 需要 |
 | **费用** | 免费 | 免费起步（300万次/月） |
 | **节点** | 香港/新加坡 | 国内 2800+ |
-| **部署方式** | 浏览器操作，无需安装 | EdgeOne 控制台 Git 导入 |
+| **部署方式** | 点按钮，自动创建 Worker + R2 | EdgeOne 控制台 Git 导入 |
 | **HTML 改写** | HTMLRewriter（流式） | 边缘函数（全量替换） |
 | **静态资源缓存** | R2 永久缓存 | EdgeOne 节点缓存 |
 | **方案教程** | [→ CF Worker 部署指南](packages/cf-worker/README.md) | [→ EdgeOne Pages 部署指南](packages/edgeone/README.md) |
@@ -42,22 +42,17 @@
 
 ## 5 分钟上手
 
-### 路线 A：CF Worker + R2（无需备案，浏览器操作）
+### 路线 A：CF Worker + R2（无需备案，点按钮一键部署）
 
-点击上方 **Deploy to Cloudflare Workers** 按钮，Cloudflare Dashboard 会自动创建 Worker 项目，然后：
+点击上方 **Deploy to Cloudflare Workers** 按钮，Cloudflare 会自动：
 
-1. **创建 R2 Bucket** — Dashboard → R2 → Create Bucket，命名如 `webflow-assets`
-2. **粘贴 Worker 代码** — Worker → Quick Edit，复制 [`packages/cf-worker/worker.js`](packages/cf-worker/worker.js) 的全部内容粘贴进去 → Save and Deploy
-3. **绑定 R2** — Worker → Settings → Variables → R2 Bucket Bindings → 添加绑定 `MY_BUCKET` → 选择刚创建的 Bucket
-4. **设置环境变量** — Worker → Settings → Variables → 添加 `WEBFLOW_HOST`（你的 `xxx.webflow.io`）
+1. 创建 Worker 项目
+2. 创建 R2 Bucket 并自动绑定到 Worker
+3. 跳转到配置页面，**只需填写一个环境变量**：`WEBFLOW_HOST` = 你的 `xxx.webflow.io`
 
-   > **可选**：先运行 `npm run build`，然后复制 `packages/cf-worker/dist/worker.js` 粘贴到 Dashboard。构建后的文件已内置配置文件（`edgeflow.config.js`）的值，无需再逐个填写环境变量。
+填写后 Deploy → 绑定自定义域名 → 完成。不再需要手动创建 R2、手动绑定。
 
-5. **绑定域名** — Worker → Triggers → Custom Domains → 添加你的域名
-
-不需要安装任何东西，全程浏览器操作。
-
-[→ 完整部署指南](packages/cf-worker/README.md)
+> 如果对稳定性要求较高，建议先 Fork 本仓库，然后从自己的 Fork 部署。方法见 [→ 完整部署指南](packages/cf-worker/README.md)
 
 ### 路线 B：EdgeOne Pages（需要 ICP 备案，Git 导入）
 
@@ -79,12 +74,14 @@
 ```
 webflow-china-speedup/
 ├── README.md                      # 你在这里
-├── wrangler.toml                  # Cloudflare Workers 部署配置
 ├── packages/
-│   ├── cf-worker/                 # 路线 A：CF Worker + R2
-│   │   ├── README.md              # Dashboard 部署指南
+│   ├── cf-worker/                 # 路线 A：CF Worker + R2（完全自包含，Deploy 按钮入口）
+│   │   ├── README.md              # 部署指南
+│   │   ├── wrangler.toml          # CF 部署配置（含 R2 自动创建）
+│   │   ├── edgeflow.config.js     # 用户配置
 │   │   ├── worker.js              # Worker 代码（12 项优化）
-│   │   └── wrangler.toml.example  # 配置参考
+│   │   ├── build.mjs              # 构建脚本
+│   │   └── scripts/sync-check.mjs # 线上/本地版本一致性检查
 │   └── edgeone/                   # 路线 B：EdgeOne Pages
 │       ├── README.md              # 部署指南（含环境变量 + CDN 失效排查）
 │       ├── edge-functions/_shared/proxy.js  # 边缘函数代理逻辑
