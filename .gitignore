@@ -1,2 +1,5 @@
 .claude/
 .DS_Store
+*.zip
+*.tar.gz
+.DS_Store

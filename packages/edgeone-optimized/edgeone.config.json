@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "include": [
+    "edge-functions/**",
+    "scripts/**"
+  ],
+  "ignore": [
+    "node_modules/",
+    ".git/",
+    "*.md",
+    ".DS_Store"
+  ]
+}
