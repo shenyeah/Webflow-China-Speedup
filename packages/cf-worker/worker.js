@@ -44,15 +44,18 @@ export default {
 
     // 1️⃣ 静态资源处理（robots.txt / sitemap.xml 从 R2 Public 返回，R2 未命中则生成默认内容）
     if (pathname === "/robots.txt" || pathname === "/sitemap.xml") {
-      const r2Base = env.R2_PUBLIC_BASE || "__R2_PUBLIC_URL__";
-      const fileResponse = await fetch(`${r2Base}${pathname}`, { cf: { cacheEverything: true } });
-      if (fileResponse.ok) {
-        const contentType = pathname.endsWith(".xml") ? "application/xml" : "text/plain";
-        return new Response(fileResponse.body, {
-          headers: { "content-type": contentType, "cache-control": "public, max-age=3600" }
-        });
+      const r2Base = env.R2_PUBLIC_BASE || "";
+      // 只在 R2_PUBLIC_BASE 已配置时尝试从 R2 获取
+      if (r2Base.startsWith("http")) {
+        const fileResponse = await fetch(`${r2Base}${pathname}`, { cf: { cacheEverything: true } });
+        if (fileResponse.ok) {
+          const contentType = pathname.endsWith(".xml") ? "application/xml" : "text/plain";
+          return new Response(fileResponse.body, {
+            headers: { "content-type": contentType, "cache-control": "public, max-age=3600" }
+          });
+        }
       }
-      // R2 未命中时：生成默认内容，避免降级到反向代理
+      // R2 未配置或未命中时：生成默认内容，避免降级到反向代理
       const sitemapUrl = `https://${url.hostname}/sitemap.xml`;
       if (pathname === "/robots.txt") {
         const body = `User-agent: *\nAllow: /\nCrawl-delay: 10\nSitemap: ${sitemapUrl}\n`;
