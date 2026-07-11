@@ -1,3 +1,18 @@
+/**
+ * Webflow China Speedup — EdgeOne Pages 代理核心逻辑 (v2.0)
+ *
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║  改动记录                                                     ║
+ * ║  [v2.0] 修复 Geo 路由不生效 + 缓存不分地区 + Health 500      ║
+ * ║  [v1.0] 初始版本                                             ║
+ * ╚═══════════════════════════════════════════════════════════════╝
+ *
+ *  ⚠️ 目录结构说明（2026-06-08）：
+ *     本项目有 edge-functions/ 和 functions/ 两个目录。
+ *     - edge-functions/ ← 当前使用（最新版本，包含所有修复）
+ *     - functions/       ← 旧版遗留（版本落后），待确认 CF Worker 无依赖后删除
+ */
+
 const DEFAULT_CONFIG = {
   originHost: "webflowcn.webflow.io",
   assetProxyPrefix: "/__eo_asset_v3__",
@@ -25,29 +40,145 @@ const BODY_INJECT = `<script>(function(){var r=function(){document.querySelector
 
 const STATIC_EXT_RE = /\.(?:js|mjs|css|png|jpg|jpeg|gif|webp|svg|ico|woff2|woff|ttf|map|json|xml|txt|pdf|mp4|webm|ogg|mp3)$/i;
 
-export async function handleProxyRequest(request, env = {}) {
+/**
+ * 获取客户端地区代码 — 从多个来源 fallback
+ * EdgeOne Pages 通过 request.eo.geo (运行时属性) 传递地区信息，
+ * 而非 HTTP 请求头。这里依次兜底。
+ */
+function getClientCountry(request, context = {}) {
+  // 1. 检查 EdgeOne 运行时属性 request.eo.geo（主路径）
+  try {
+    const eo = request.eo || context.eo;
+    if (eo && eo.geo && eo.geo.countryCodeAlpha2) {
+      return eo.geo.countryCodeAlpha2.toUpperCase();
+    }
+  } catch (_) {}
+
+  // 2. 检查 eo-is-mainland 请求头（EdgeOne Pages 注入）
+  const isMainland = request.headers.get("eo-is-mainland");
+  if (isMainland === "1") return "CN";
+
+  // 3. 传统 HTTP 请求头（需要 EdgeOne 配置才传递）
+  return (
+    request.headers.get("EO-Client-IPCountry") ||
+    request.headers.get("X-EdgeOne-Client-Country") ||
+    request.headers.get("CloudFront-Viewer-Country") ||
+    request.headers.get("X-EO-Client-IPCountry") ||
+    request.cf?.country ||
+    ""
+  ).toUpperCase();
+}
+
+export async function handleProxyRequest(request, env = {}, context = {}) {
   const reqUrl = new URL(request.url);
   const cfg = resolveSiteConfig(env);
 
+  // ════════════════════════════════════════════════════════════
+  // Health 端点 — 用 new Response() 而非 Response.json()
+  // (EdgeOne 运行时可能不支持 Response.json()，导致 500)
+  // ════════════════════════════════════════════════════════════
   if (reqUrl.pathname === "/__proxy/health") {
-    return Response.json(
-      {
-        ok: true,
-        runtime: "edgeone-pages",
-        host: reqUrl.host,
-        origin: cfg.originHost,
-        assetProxyPrefix: cfg.assetProxyPrefix,
-        geo: {
-          country: request.headers.get("EO-Client-IPCountry") || request.headers.get("CloudFront-Viewer-Country") || null,
-          allGeoHeaders: ["EO-Client-IPCountry", "CloudFront-Viewer-Country", "EO-Client-IPRegion", "X-EdgeOne-Client-Country"]
-            .map(h => `${h}: ${request.headers.get(h) || "(none)"}`)
+    const seenGeoHeaders = [
+      "EO-Client-IPCountry",
+      "X-EdgeOne-Client-Country",
+      "CloudFront-Viewer-Country",
+      "X-EO-Client-IPCountry",
+      "EO-Client-IPRegion",
+      "CF-IPCountry",
+      "X-Forwarded-For",
+      "True-Client-IP",
+      "CF-Connecting-IP",
+      "EO-Client-IP",
+      "X-Real-IP"
+    ].map(h => `${h}: ${request.headers.get(h) || "(none)"}`);
+    const detectedCountry = getClientCountry(request, context);
+
+    // Dump ALL request headers for debugging
+    const allHeaders = {};
+    if (request.headers && typeof request.headers.forEach === "function") {
+      request.headers.forEach((value, key) => {
+        allHeaders[key] = value;
+      });
+    } else if (request.headers && request.headers.entries) {
+      for (const [key, value] of request.headers.entries()) {
+        allHeaders[key] = value;
+      }
+    } else {
+      // Fallback: iterate manually
+      const headerNames = [
+        "host", "user-agent", "accept", "accept-encoding", "accept-language",
+        "referer", "origin", "cookie", "x-forwarded-for", "x-forwarded-proto",
+        "x-real-ip", "true-client-ip", "cf-connecting-ip", "cf-ipcountry",
+        "cf-ray", "eo-client-ipcountry", "x-edgeone-client-country",
+        "eo-client-ip", "cloudfront-viewer-country", "x-nws-log-uuid",
+        "x-cache-lookup", "via", "connection", "content-type",
+        "content-length", "cache-control", "pragma",
+        "sec-ch-ua", "sec-ch-ua-platform", "sec-ch-ua-mobile",
+        "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest",
+        "dnt", "upgrade-insecure-requests"
+      ];
+      headerNames.forEach(name => {
+        allHeaders[name] = request.headers.get(name) || "(none)";
+      });
+    }
+
+    // Also check for EdgeOne-specific request properties
+    const extraProps = {};
+    try {
+      extraProps["eo"] = request.eo ? JSON.stringify(request.eo) : "(not available)";
+      extraProps["cf"] = request.cf ? JSON.stringify(request.cf) : "(not available)";
+      extraProps["context"] = typeof request.context !== "undefined" ? String(request.context) : "(not available)";
+      // Check context object properties (EdgeOne Pages passes geo info through context)
+      const ctxKeys = Object.keys(context).filter(k => k !== "request" && k !== "env");
+      if (ctxKeys.length > 0) {
+        ctxKeys.forEach(k => {
+          try {
+            extraProps["ctx." + k] = typeof context[k] === "object" ? JSON.stringify(context[k]) : String(context[k]);
+          } catch (e) {
+            extraProps["ctx." + k] = "(error: " + e.message + ")";
+          }
+        });
+      }
+      // Also check context.env for any geo-related env vars
+      if (context.env) {
+        const geoEnvVars = Object.keys(context.env).filter(k => k.toLowerCase().includes("country") || k.toLowerCase().includes("geo") || k.toLowerCase().includes("region") || k.toLowerCase().includes("ip"));
+        if (geoEnvVars.length > 0) {
+          extraProps["geoEnvVars"] = JSON.stringify(geoEnvVars.map(k => k + "=" + context.env[k]));
+        } else {
+          extraProps["allEnvVars"] = Object.keys(context.env).join(", ");
         }
+      }
+    } catch (e) {
+      extraProps["error"] = e.message;
+    }
+
+    const body = JSON.stringify({
+      ok: true,
+      runtime: "edgeone-pages",
+      host: reqUrl.host,
+      origin: cfg.originHost,
+      assetProxyPrefix: cfg.assetProxyPrefix,
+      geo: {
+        detectedCountry: detectedCountry || "(not detected)",
+        detectedMessage: detectedCountry
+          ? `地区检测到: ${detectedCountry}${detectedCountry !== "CN" ? " → 应触发 301 重定向到源站" : " → 正常走 China 加速"}`
+          : "⚠️ 未检测到地区 — Geo 路由不可用，所有用户都将走 China 加速",
+        allGeoHeaders: seenGeoHeaders
       },
-      { status: 200 }
-    );
+      requestHeaders: allHeaders,
+      extraProps: extraProps
+    });
+
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-cache, no-store, must-revalidate"
+      }
+    });
   }
 
-  // Serve generated robots.txt and sitemap.xml since Webflow origins often lack them
+  // Serve generated robots.txt and sitemap.xml
   if (reqUrl.pathname === "/robots.txt") {
     const sitemapUrl = `${reqUrl.protocol}//${reqUrl.host}/sitemap.xml`;
     const body = `User-agent: *\nAllow: /\nSitemap: ${sitemapUrl}\n`;
@@ -72,12 +203,20 @@ export async function handleProxyRequest(request, env = {}) {
     }
   }
 
-  // Geo routing: redirect overseas visitors to the Webflow origin (no China CDN needed)
+  // ════════════════════════════════════════════════════════════
+  // Geo 路由（v2.0 修复）：海外用户 301 → 源站直连
+  //
+  // [修复] 改用 getClientCountry() 多 header fallback
+  // [修复] 海外用户也返回 Vary header，防止边缘缓存混用
+  // ════════════════════════════════════════════════════════════
   if (cfg.originHost) {
-    const country = (request.headers.get("EO-Client-IPCountry") || "").toUpperCase();
+    const country = getClientCountry(request, context);
     if (country && country !== "CN") {
       const originUrl = `https://${cfg.originHost}${reqUrl.pathname}${reqUrl.search}`;
-      return Response.redirect(originUrl, 301);
+      const resp = Response.redirect(originUrl, 301);
+      // 海外重定向响应不加缓存，防止 CDN 缓存 301 给其他用户
+      resp.headers.set("cache-control", "no-cache, no-store, must-revalidate");
+      return resp;
     }
   }
 
@@ -88,6 +227,7 @@ export async function handleProxyRequest(request, env = {}) {
     );
   }
 
+  // 正常代理流程
   const target = resolveUpstreamTarget(reqUrl, cfg);
   if (!target) {
     return new Response("400 Invalid asset proxy target", { status: 400 });
@@ -156,6 +296,12 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
   setCachingHeaders(headers, isStatic, target);
   setSecurityHeaders(headers);
 
+  // [v2.0] 对 HTML 响应添加 Vary: EO-Client-IPCountry
+  // 提示边缘缓存按地区区分，不同地区的用户获得不同的缓存版本
+  if (isHtml) {
+    headers.append("vary", "EO-Client-IPCountry, X-EdgeOne-Client-Country");
+  }
+
   if (!shouldRewriteBodyText || method === "HEAD") {
     normalizeTransferHeaders(headers);
     headers.set("x-proxy-cache-policy", isStatic ? "static" : "dynamic");
@@ -188,7 +334,7 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
   headers.delete("content-length");
   headers.delete("content-encoding");
   headers.delete("vary");
-  headers.set("vary", "Accept");
+  headers.set("vary", "Accept, EO-Client-IPCountry");
   headers.set("x-proxy-cache-policy", isStatic ? "static" : "dynamic");
   headers.set("x-proxy-upstream", target.upstreamHost);
 
@@ -233,7 +379,9 @@ function setCachingHeaders(headers, isStatic, target) {
     headers.set("cache-control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=2592000, no-transform");
     return;
   }
-  headers.set("cache-control", "public, max-age=0, s-maxage=300, stale-while-revalidate=604800, no-transform");
+  // [v2.0] 降低 stale-while-revalidate 从 7 天 → 1 小时
+  // 原因：HTML 可能因 Geo 地区不同而内容不同，缓存过期后应尽快回源校验
+  headers.set("cache-control", "public, max-age=0, s-maxage=300, stale-while-revalidate=3600, no-transform");
 }
 
 function setSecurityHeaders(headers) {
@@ -358,9 +506,6 @@ function applyChinaSpeedRewrites(input, requestUrl, cfg) {
 }
 
 function stripCssIntegrity(input) {
-  // CSS files proxied through EdgeOne get their content rewritten (URL domains changed),
-  // so SRI integrity hashes no longer match. Remove integrity + crossorigin from
-  // <link rel="stylesheet"> tags to prevent browsers from blocking the CSS.
   return input.replace(
     /<link\b([^>]*?\brel\s*=\s*["']stylesheet["'])([^>]*)>/gi,
     (_, relAttr, rest) => {
@@ -410,18 +555,20 @@ function escapeRegExp(str) {
 
 function rewriteCssFonts(input, requestUrl, cfg) {
   const reqHost = requestUrl.host;
-  const reqOrigin = `${requestUrl.protocol}//${reqHost}`;
+  const reqOrigin = requestUrl.protocol + "//" + reqHost;
+  const prefix = cfg.assetProxyPrefix;
   let output = input;
-  cfg.proxyableHosts.forEach((host) => {
-    const escapedHost = escapeRegExp(host);
-    output = output.replace(
-      new RegExp(`url\\(\\s*(["']?)https?://([\\w.-]*${escapedHost}`), "gi"),
-      (_, q, fullHost) => `url(${q || ""}${reqOrigin}${cfg.assetProxyPrefix}/${fullHost}`
-    );
-    output = output.replace(
-      new RegExp(`url\\(\\s*(["']?)//([\\w.-]*${escapedHost}`), "gi"),
-      (_, q, fullHost) => `url(${q || ""}//${reqHost}${cfg.assetProxyPrefix}/${fullHost}`
-    );
+  cfg.proxyableHosts.forEach(function(host) {
+    const escaped = escapeRegExp(host);
+    // Build regex via string concatenation to avoid esbuild template literal regex issues
+    var re1 = new RegExp("url\\(\\s*([\"']?)https?://([\\w.-]*" + escaped + ")", "gi");
+    var re2 = new RegExp("url\\(\\s*([\"']?)//([\\w.-]*" + escaped + ")", "gi");
+    output = output.replace(re1, function(m, q, fullHost) {
+      return "url(" + (q || "") + reqOrigin + prefix + "/" + fullHost;
+    });
+    output = output.replace(re2, function(m, q, fullHost) {
+      return "url(" + (q || "") + "//" + reqHost + prefix + "/" + fullHost;
+    });
   });
   return output;
 }
@@ -462,32 +609,20 @@ async function scrapeHomepageLinks(cfg, reqOrigin) {
   const seen = new Set();
   const items = [];
 
-  // Extract href from <a> tags, handling various attribute orderings
   const hrefRe = /<a\b[^>]*?\bhref\s*=\s*["']([^"']*?)["'][^>]*>/gi;
   let match;
   while ((match = hrefRe.exec(html)) !== null) {
     let href = match[1];
-
-    // Skip anchors, javascript:, mailto:, tel:
     if (/^(#|javascript:|mailto:|tel:)/i.test(href)) continue;
-
-    // Resolve relative URLs against the origin
     let absolute;
     try {
       absolute = new URL(href, reqOrigin);
     } catch (_e) { continue; }
-
-    // Skip external links (different host)
     if (absolute.host !== new URL(reqOrigin).host) continue;
-
-    // Normalize: strip query, hash, trailing slash
     absolute.search = "";
     absolute.hash = "";
     let normalized = absolute.toString().replace(/\/$/, "");
-
-    // Skip the homepage itself (it's always included)
     if (normalized === reqOrigin.replace(/\/$/, "")) continue;
-
     if (!seen.has(normalized)) {
       seen.add(normalized);
       items.push({ loc: normalized });

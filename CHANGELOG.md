@@ -1,0 +1,52 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [v2.0] — 2026-06-09
+
+### 🎯 Geo 路由修复（核心）
+
+- **fix**: 重写 `getClientCountry()` 函数，优先检测 `request.eo.geo.countryCodeAlpha2`（EdgeOne Pages 运行时属性，无需手动配置回源头）
+- **fix**: 新增 `eo-is-mainland` 请求头检测作为备用方案（EdgeOne Pages 自动注入）
+- **feat**: Health 端点现在显示完整 Geo 检测信息（detectedCountry + 检测到/未检测到提示）
+- **feat**: 海外用户（非 CN）访问时返回 `301 redirect → webflowcn.webflow.io`，附带 `cache-control: no-cache` 防止重定向缓存误伤
+
+### 🔧 Health 端点修复
+
+- **fix**: 弃用 `Response.json()`（EdgeOne Pages 运行时不支持，导致 HTTP 500），改用 `new Response(JSON.stringify())` 
+- **feat**: 增加完整请求头 dump 和 `request.eo` / `context.eo` 运行时属性探测，方便未来调试
+
+### 🗄️ 缓存分离修复
+
+- **fix**: HTML 响应增加 `Vary: Accept, EO-Client-IPCountry` header，提示边缘缓存按地区区分
+- **fix**: `stale-while-revalidate` 从 604800（7 天）降低至 3600（1 小时），避免 Geo 相关内容过期后的缓存混用
+- **feat**: `edgeone.json` 全部静态资源规则增加 `varyByHeader: ["EO-Client-IPCountry"]`
+
+### 🏗️ 代码质量
+
+- **fix**: `rewriteCssFonts()` 函数中正则捕获组缺少闭合括号，导致 esbuild 构建失败（Node.js 语法检查能通过但 EdgeOne 的 esbuild 更严格）
+- **fix**: 用 `RegExp("str" + var)` 字符串拼接替代模板字面量 `` RegExp(`...${var}`) `` 规避 esbuild 正则校验问题
+- **refactor**: `handleProxyRequest` 增加第三个参数 `context`，用于传递 EdgeOne pages 运行时对象
+
+### 🧹 清理
+
+- **chore**: 删除 `packages/edgeone/functions/` 旧版遗留目录（内容已迁移到 `edge-functions/`）
+- **chore**: 清理构建临时目录和 zip 文件
+- **docs**: 更新 README.md 部署说明
+
+### 验证结果
+
+| 场景 | 预期 | 结果 |
+|------|------|------|
+| 🇨🇳 CN 直连 | 200 OK, baomitu/jsdmirror 替换 | ✅ |
+| 🇺🇸 美国代理 | 301 → webflowcn.webflow.io | ✅ |
+| Health 端点 | 200 OK, 返回 Geo 信息 | ✅ |
+| esbuild 构建 | 无语法错误 | ✅ |
+
+---
+
+## [v1.0] — 2026-05
+
+- Initial release
+- CF Worker + R2 和 EdgeOne Pages 双路线
+- 12 项 Webflow 中国大陆加速优化

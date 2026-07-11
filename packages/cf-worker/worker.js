@@ -39,17 +39,34 @@ export default {
       });
     }
 
-    const WEBFLOW_HOST = env.WEBFLOW_HOST || "__WEBFLOW_HOST__";
+    const WEBFLOW_HOST = env.WEBFLOW_HOST || "webflowcn.webflow.io";
     const CUSTOM_DOMAIN = url.hostname; // 用户的自定义域名（从请求自动获取）
 
-    // 1️⃣ 静态资源处理（robots.txt / sitemap.xml 从 R2 Public 返回）
+    // 1️⃣ 静态资源处理（robots.txt / sitemap.xml 从 R2 Public 返回，R2 未命中则生成默认内容）
     if (pathname === "/robots.txt" || pathname === "/sitemap.xml") {
-      const r2Base = env.R2_PUBLIC_BASE || "__R2_PUBLIC_URL__";
-      const fileResponse = await fetch(`${r2Base}${pathname}`, { cf: { cacheEverything: true } });
-      if (fileResponse.ok) {
-        const contentType = pathname.endsWith(".xml") ? "application/xml" : "text/plain";
-        return new Response(fileResponse.body, {
-          headers: { "content-type": contentType, "cache-control": "public, max-age=3600" }
+      const r2Base = env.R2_PUBLIC_BASE || "";
+      // 只在 R2_PUBLIC_BASE 已配置时尝试从 R2 获取
+      if (r2Base.startsWith("http")) {
+        const fileResponse = await fetch(`${r2Base}${pathname}`, { cf: { cacheEverything: true } });
+        if (fileResponse.ok) {
+          const contentType = pathname.endsWith(".xml") ? "application/xml" : "text/plain";
+          return new Response(fileResponse.body, {
+            headers: { "content-type": contentType, "cache-control": "public, max-age=3600" }
+          });
+        }
+      }
+      // R2 未配置或未命中时：生成默认内容，避免降级到反向代理
+      const sitemapUrl = `https://${url.hostname}/sitemap.xml`;
+      if (pathname === "/robots.txt") {
+        const body = `User-agent: *\nAllow: /\nCrawl-delay: 10\nSitemap: ${sitemapUrl}\n`;
+        return new Response(body, {
+          headers: { "content-type": "text/plain", "cache-control": "public, max-age=3600" }
+        });
+      } else {
+        // sitemap.xml fallback: 空站点地图
+        const body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
+        return new Response(body, {
+          headers: { "content-type": "application/xml", "cache-control": "public, max-age=3600" }
         });
       }
     }
@@ -120,12 +137,13 @@ export default {
 
         const upstreamResp = await fetch(upstreamURL, {
           headers: fetchHeaders,
-          cf: { cacheEverything: true }
+          cf: { cacheEverything: true, cacheTtl: 86400 }
         });
 
         if (upstreamResp.ok || upstreamResp.status === 206) {
           const contentType = upstreamResp.headers.get("content-type");
           const newHeaders = new Headers(upstreamResp.headers);
+          newHeaders.delete("content-length"); // 避免 ReadableStream body 与继承的 content-length 不匹配
           newHeaders.set("accept-ranges", "bytes");
           newHeaders.set("x-cache", rangeHeader ? "MISS-R2-RANGE-PASS" : "MISS-R2-FETCHED");
 
@@ -298,6 +316,7 @@ export default {
       const respHeaders = new Headers(originResp.headers);
       respHeaders.set("cache-control", "public, max-age=300, s-maxage=300");
       respHeaders.delete("set-cookie"); // 移除 cookie 避免缓存污染
+      respHeaders.delete("content-length"); // HTMLRewriter transform 后 body 是 ReadableStream，长度未知
 
       return new Response(rewriter.transform(originResp).body, {
         status: originResp.status,

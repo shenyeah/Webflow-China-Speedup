@@ -1,6 +1,6 @@
 export default {
   // 你的 Webflow 项目地址（如 my-site.webflow.io）
-  webflowHost: "REPLACE_WITH_YOUR_WEBFLOW_HOST",
+  webflowHost: "webflowcn.webflow.io",
 
   // R2 Bucket 公开访问 URL（Dashboard → R2 → Bucket → Settings → Public Access）
   // 如 https://pub-xxxx.r2.dev

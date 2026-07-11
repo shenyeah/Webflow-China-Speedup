@@ -27,12 +27,13 @@ workerCode = workerCode.replace(/"__BUILD_COMMIT__"/g, JSON.stringify(buildVersi
 workerCode = workerCode.replace(/"__BUILD_DEPLOY_TIME__"/g, JSON.stringify(deployTime));
 workerCode = workerCode.replace(/"__WEBFLOW_HOST__"/g, JSON.stringify(config.webflowHost));
 workerCode = workerCode.replace(/"__R2_PUBLIC_URL__"/g, JSON.stringify(config.r2PublicUrl));
-// Also replace the old-style placeholders (for backward compatibility)
+
+// Also replace the new default value (worker.js now ships with webflowcn.webflow.io instead of __WEBFLOW_HOST__)
+workerCode = workerCode.replace(/"webflowcn\.webflow\.io"/g, JSON.stringify(config.webflowHost));
 workerCode = workerCode.replace(/"REPLACE_WITH_YOUR_WEBFLOW_HOST"/g, JSON.stringify(config.webflowHost));
 workerCode = workerCode.replace(/"REPLACE_WITH_YOUR_R2_PUBLIC_URL"/g, JSON.stringify(config.r2PublicUrl));
 
 // --- Write output ---
 mkdirSync("dist", { recursive: true });
 writeFileSync("dist/worker.js", workerCode);
-
 console.log(`✓ Built dist/worker.js (version: ${buildVersion})`);

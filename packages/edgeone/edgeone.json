@@ -5,11 +5,11 @@
       "headers": [
         {
           "key": "X-EdgeOne-Proxy",
-          "value": "webflow-china-speedup-edgeone"
+          "value": "webflow-china-speedup-edgeone-v2"
         },
         {
           "key": "X-Proxy-Version",
-          "value": "webflow-china-speedup/1.0"
+          "value": "webflow-china-speedup/2.0"
         }
       ]
     }
@@ -21,51 +21,63 @@
     },
     {
       "source": "/*.js",
-      "ttl": 604800
+      "ttl": 604800,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.css",
-      "ttl": 604800
+      "ttl": 604800,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.png",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.jpg",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.jpeg",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.gif",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.webp",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.svg",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.ico",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.woff2",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.woff",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     },
     {
       "source": "/*.ttf",
-      "ttl": 2592000
+      "ttl": 2592000,
+      "varyByHeader": ["EO-Client-IPCountry"]
     }
   ]
 }
