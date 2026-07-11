@@ -39,7 +39,7 @@ export default {
       });
     }
 
-    const WEBFLOW_HOST = env.WEBFLOW_HOST || "__WEBFLOW_HOST__";
+    const WEBFLOW_HOST = env.WEBFLOW_HOST || "webflowcn.webflow.io";
     const CUSTOM_DOMAIN = url.hostname; // 用户的自定义域名（从请求自动获取）
 
     // 1️⃣ 静态资源处理（robots.txt / sitemap.xml 从 R2 Public 返回，R2 未命中则生成默认内容）
