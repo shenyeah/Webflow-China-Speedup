@@ -1,4 +1,6 @@
- # Webflow-China-Speedup
+> 优先用简体中文回答和命名对话。
+
+# Webflow-China-Speedup
 
  > Webflow 网站在中国大陆的被 GFW 封控，无法访问。本仓库提供反向代理解决方案，两条路线可选，5 分钟恢复访问。
 

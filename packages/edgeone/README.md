@@ -83,7 +83,7 @@ EdgeOne 提供免费的爬虫管理能力，无需修改 Edge Function 代码：
 1. 登录 [EdgeOne 控制台](https://console.cloud.tencent.com/edgeone)
 2. 进入你的站点 → **安全 → Bot 管理**
 3. 开启 **AI Bot 画像识别**（2026.02 上线的免费功能）
-4. 设置规则：对 AI 爬虫（GPTBot, ClaudeBot 等）返回 403 或限制速率
+4. 设置规则：对 AI 爬虫返回 403 或限制速率
 5. 或者在 **速率限制** 中设置：单 IP 每秒不超过 10 次请求
 
 ## 验证
