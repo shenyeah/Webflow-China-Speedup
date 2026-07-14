@@ -282,7 +282,7 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
   const isHtml = contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
   const isCss = contentType.includes("text/css");
   const isGoogleFontCss = target.upstreamHost === "fonts.googleapis.com" && isCss;
-  const shouldRewriteBodyText = isHtml || isGoogleFontCss || isCss;
+  const shouldRewriteBodyText = isHtml || isGoogleFontCss;
   const isStatic = STATIC_EXT_RE.test(target.sourcePathname);
 
   rewriteLocationHeader(headers, requestUrl, cfg);
