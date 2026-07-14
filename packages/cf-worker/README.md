@@ -15,18 +15,17 @@
 
 ### 方式 A：点按钮一键部署（推荐）
 
-点击以下按钮，Cloudflare 会**自动创建 Worker + R2 Bucket + 绑定**，你在配置页只需填一个环境变量：
+ 点击以下按钮，Cloudflare 会**自动创建 Worker + R2 Bucket + 绑定**，零配置即可使用。默认代理 `webflowcn.webflow.io`（演示站点）。
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker)
-
-点击按钮后：
-
-1. Cloudflare Dashboard 打开 → 自动识别仓库并加载配置
-2. 在配置页找到 **Environment Variables** → 填写 `WEBFLOW_HOST` = 你的 `xxx.webflow.io`（不带 `https://`）
-3. 点击 **Deploy** → Worker + R2 Bucket 自动创建、绑定、部署
-4. 部署完成后 → **Triggers** → **Custom Domains** → 添加你的域名
-
-完成。
+ [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker)
+ 
+ 点击按钮后：
+ 
+ 1. 点击 **Deploy** → Worker + R2 Bucket 自动创建、绑定、部署
+ 2. 部署完成后 → **Triggers** → **Custom Domains** → 添加你的域名
+ 3. 要代理你自己的网站，在 Dashboard → Settings → Variables 添加：`WEBFLOW_HOST` = 你的 `xxx.webflow.io`
+ 
+ 完成。
 
 ### 方式 B：Fork 后部署（稳定性更好）
 
@@ -89,9 +88,10 @@ npm run sync:check https://your-domain.com
 
 | 问题 | 解决方法 |
 |------|---------|
-| 502 错误 | `WEBFLOW_HOST` 是否填对了？不要带 `https://` |
-| 页面无样式 | 只看到纯文字？刷新一次，可能是首次部署缓存未生效 |
-| 字体超时 | 检查环境变量是否已保存部署 |
+ | 502 错误 | `WEBFLOW_HOST` 是否填对了？不要带 `https://` |
+ | 页面无样式 | 只看到纯文字？刷新一次，可能是首次部署缓存未生效 |
+ | 字体超时 | 检查是否未设置 `WEBFLOW_HOST`，或你的域名未绑定自定义域名 |
+ | 部署后正常但代理的是 `webflowcn.webflow.io` 的内容 | 未设置 `WEBFLOW_HOST`，在 Dashboard Variables 添加即可覆盖 |
 | 网站跳转到 webflow.io | Worker 未拦截 301 重定向，确认代码已部署最新版本 |
 
 ## 12 项自动优化

@@ -60,20 +60,21 @@ EdgeOne 路径**不需要**类似 Cloudflare R2 的存储桶方案。其内置 C
 
 ### 方式一：通过 EdgeOne Pages 控制台（推荐）
 
-1. 在本地执行 `cd packages/edgeone && node build.mjs` 生成 `.edgeone/` 目录
-2. 将 `packages/edgeone/` 提交到 Git 仓库
-3. 打开 [腾讯云 EdgeOne 控制台](https://console.cloud.tencent.com/edgeone) → Pages → 新建项目
-4. 选择「从 Git 导入」，Root directory 设置为 `packages/edgeone/`
-5. 构建配置留空，直接创建
-6. 部署完成后设置环境变量：`WEBFLOW_ORIGIN_HOST` = 你的 `xxx.webflow.io`
-7. 重新部署 → 绑定自定义域名
-8. （可选）在控制台开启 AI Bot Management 限制爬虫频率
+ 1. 执行 `node build.mjs` 生成 `.edgeone/` 目录
+ 2. 将整个仓库提交到 Git（根目录含部署所需的软链接）
+ 3. 打开 [腾讯云 EdgeOne 控制台](https://console.cloud.tencent.com/edgeone) → Pages → 新建项目
+ 4. 选择「从 Git 导入」，Root directory 选择根目录 `/`（默认值，无需修改）
+ 5. 构建配置留空，直接创建
+ 6. 绑定自定义域名 → 代理立即生效（默认 `webflowcn.webflow.io` 演示站点）
+ 7. 要代理你自己的网站，在控制台 → 环境变量添加 `WEBFLOW_HOST` = 你的 `xxx.webflow.io`，然后重新部署
+ 8. （可选）在控制台开启 AI Bot Management 限制爬虫频率
 
-### 方式二：直接上传文件夹
-
-1. `cd packages/edgeone && node build.mjs`
-2. 将整个 `edgeone/` 目录压缩上传到 EdgeOne Pages
-3. 设置环境变量同上
+ ### 方式二：直接上传文件夹
+ 
+ 1. 执行 `node build.mjs`
+ 2. 将整个 `edgeone/` 目录压缩上传到 EdgeOne Pages
+ 3. 绑定域名即可使用（默认代理 `webflowcn.webflow.io`）
+ 4. 要代理你自己的网站，在控制台添加环境变量 `WEBFLOW_HOST` = 你的 `xxx.webflow.io`
 
 ## 爬虫控制建议（EdgeOne 控制台配置）
 
@@ -98,10 +99,10 @@ EdgeOne 提供免费的爬虫管理能力，无需修改 Edge Function 代码：
 
 ## 环境变量
 
-| 变量名 | 必填 | 说明 |
-|--------|------|------|
-| `WEBFLOW_ORIGIN_HOST` | ✅ | 你的 Webflow 项目地址，如 `xxx.webflow.io` |
-| `MIRROR_JQUERY` | 可选 | jQuery 国内镜像地址 |
+ | 变量名 | 必填 | 说明 |
+ |--------|------|------|
+ | `WEBFLOW_HOST` | 可选 | 你的 Webflow 项目地址（默认 `webflowcn.webflow.io`）|
+ | `MIRROR_JQUERY` | 可选 | jQuery 国内镜像地址 |
 | `MIRROR_JSD_MIRROR` | 可选 | jsDelivr 国内镜像 |
 | `MIRROR_WEBFONT` | 可选 | WebFont loader 国内镜像 |
 | `ASSET_PROXY_PREFIX` | 可选 | 资源代理路径前缀（默认 `/__eo_asset_v3__`） |

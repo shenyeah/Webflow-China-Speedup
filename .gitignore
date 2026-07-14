@@ -2,9 +2,8 @@
 .DS_Store
 *.zip
 *.tar.gz
-.DS_Store
 .edgeone/
- .codegraph/
- .reasonix/
- .wrangler/
- packages/cf-worker/.wrangler/
+.codegraph/
+.reasonix/
+.wrangler/
+packages/cf-worker/.wrangler/

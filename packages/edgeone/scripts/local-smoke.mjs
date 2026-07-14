@@ -47,7 +47,7 @@ globalThis.fetch = async (input) => {
 
 try {
   const env = {
-    WEBFLOW_ORIGIN_HOST: ORIGIN_HOST,
+    WEBFLOW_HOST: ORIGIN_HOST,
     ASSET_PROXY_PREFIX: "/__eo_asset_v3__"
   };
 
@@ -113,7 +113,7 @@ try {
   const healthJson = await health.json();
   assert.equal(healthJson.origin, ORIGIN_HOST);
 
-  // Test that missing WEBFLOW_ORIGIN_HOST falls back to DEFAULT_CONFIG
+  // Test that missing WEBFLOW_HOST falls back to DEFAULT_CONFIG
   const fallbackResp = await handleProxyRequest(
     new Request("https://example.com/"),
     { ASSET_PROXY_PREFIX: "/__eo_asset_v3__" }

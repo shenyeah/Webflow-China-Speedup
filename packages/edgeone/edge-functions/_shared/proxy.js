@@ -222,7 +222,7 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
 
   if (!cfg.originHost) {
     return new Response(
-      "502 PROXY_CONFIG_ERROR: 环境变量 WEBFLOW_ORIGIN_HOST 未配置。请在 EdgeOne Pages 控制台 → 设置 → 环境变量中添加，值为你的 Webflow 项目地址（如 xxx.webflow.io）。",
+      "502 PROXY_CONFIG_ERROR: 环境变量 WEBFLOW_HOST 未配置。请在 EdgeOne Pages 控制台 → 设置 → 环境变量中添加，值为你的 Webflow 项目地址（如 xxx.webflow.io）。",
       { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } }
     );
   }
@@ -252,7 +252,7 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
 
 function resolveSiteConfig(env) {
   return {
-    originHost: env.WEBFLOW_ORIGIN_HOST || DEFAULT_CONFIG.originHost,
+    originHost: env.WEBFLOW_HOST || DEFAULT_CONFIG.originHost,
     assetProxyPrefix: ensurePrefix(env.ASSET_PROXY_PREFIX || DEFAULT_CONFIG.assetProxyPrefix),
     proxyableHosts: DEFAULT_CONFIG.proxyableHosts,
     mirrorJquery: env.MIRROR_JQUERY || DEFAULT_CONFIG.mirrorJquery,
