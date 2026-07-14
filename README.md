@@ -67,4 +67,9 @@
 
 本方案绕过的是 GFW 的地理限制，不是 Webflow 的收费机制。使用免费版（Starter Plan）+ 本方案发布到自定义域名可能违反 Webflow [服务条款](https://webflow.com/legal/terms)。建议购买至少一个付费 Site Plan。
 
-[→ 架构与设计决策](docs/Architecture.md) · [→ API 参考](docs/API.md) · [→ AI 开发上下文](AGENTS.md)
+[→ 架构与设计决策](docs/Architecture.md) · [→ API 参考](docs/API.md) · [→ AI 开发上下文](AGENTS.md) · [→ 许可证](LICENSE)
+
+---
+
+本仓库采用 **个人使用许可证**，仅供非商业性个人使用。详见 [LICENSE](LICENSE)。
+商业使用需取得作者授权。
