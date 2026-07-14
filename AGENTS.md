@@ -17,7 +17,6 @@
  ├── CHANGELOG.md                # 版本日志
  ├── docs/                       # 架构/API/设计决策文档
  ├── memory/                     # 当前状态 & Roadmap
- ├── logs/                       # CHANGELOG 软链接
  ├── tasks/                      # 开发任务跟踪
  │
  ├── packages/

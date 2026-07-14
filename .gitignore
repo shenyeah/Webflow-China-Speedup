@@ -7,3 +7,4 @@
 .reasonix/
 .wrangler/
 packages/cf-worker/.wrangler/
+logs/
