@@ -1,5 +1,19 @@
 # Changelog
 
+## [v2.1] — 2026-07-14
+
+### 📦 文件整理与结构简化
+
+- **refactor**: 精简 README，只保留项目背景、能力边界和直接操作步骤
+- **docs**: 新增 AGENTS.md 提供 AI 上下文，复杂说明移至 docs/ 目录
+- **feat**: 根目录添加 EdgeOne 部署软链接，Root Directory 默认选择 /
+- **fix**: 统一环境变量 WEBFLOW_ORIGIN_HOST → WEBFLOW_HOST，代码内置默认值
+- **chore**: 移除开发缓存文件（.codegraph/、.reasonix/、.wrangler/ cache）
+- **chore**: 移除开发任务跟踪（tasks/）和测试脚本（scripts/）
+- **chore**: 移除内部验证文档（docs/v2.1-optimize-verify.md）
+- **chore**: 更新 .gitignore 覆盖缓存和脚本目录
+
+
 All notable changes to this project will be documented in this file.
 
 ## [v2.0] — 2026-06-09

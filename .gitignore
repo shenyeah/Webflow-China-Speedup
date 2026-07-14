@@ -8,3 +8,5 @@
 .wrangler/
 packages/cf-worker/.wrangler/
 logs/
+packages/edgeone/scripts/
+packages/cf-worker/scripts/

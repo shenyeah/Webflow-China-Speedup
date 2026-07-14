@@ -17,16 +17,14 @@
  ├── CHANGELOG.md                # 版本日志
  ├── docs/                       # 架构/API/设计决策文档
  ├── memory/                     # 当前状态 & Roadmap
- ├── tasks/                      # 开发任务跟踪
- │
+  │
  ├── packages/
  │   ├── cf-worker/              # [路线 A] CF Worker + R2
  │   │   ├── worker.js           # 核心代理逻辑（含 12 项优化）
  │   │   ├── wrangler.toml       # CF 部署配置
  │   │   ├── build.mjs           # 构建脚本（压缩 + 版本注入）
  │   │   ├── edgeflow.config.js  # 用户配置入口
- │   │   └── scripts/            # 辅助脚本
- │   │
+  │   │
  │   └── edgeone/                # [路线 B] EdgeOne Pages
  │       ├── edgeone.json        # 缓存/响应头规则
  │       ├── build.mjs           # 边缘函数打包
@@ -34,15 +32,13 @@
  │       │   ├── _shared/proxy.js  # 核心代理逻辑
  │       │   ├── index.js          # 入口
  │       │   └── [[default]].js    # 通配路由
- │       └── scripts/            # 本地测试/审计脚本
- │
+  │
  ├── edgeone.json        → packages/edgeone/edgeone.json     #
  ├── edgeone.config.json → packages/edgeone/edgeone.config.json  # 软链接
  ├── build.mjs           → packages/edgeone/build.mjs       # （EdgeOne 部署用）
  ├── package.json        → packages/edgeone/package.json    #
  ├── edge-functions/     → packages/edgeone/edge-functions/ #
- ├── scripts/            → packages/edgeone/scripts/        #
- ├── .edgeoneignore      → packages/edgeone/.edgeoneignore  #
+  ├── .edgeoneignore      → packages/edgeone/.edgeoneignore  #
  └── .env.example        → packages/edgeone/.env.example    #
  ```
 
@@ -91,13 +87,6 @@
 
  ---
 
- ## 开发工作流
-
- ```bash
- # EdgeOne 本地开发
- cd packages/edgeone
- node scripts/local-smoke.mjs               # 本地冒烟
- node scripts/live-audit.mjs https://你域名  # 线上审计
 
  # CF Worker 本地开发
  cd packages/cf-worker
