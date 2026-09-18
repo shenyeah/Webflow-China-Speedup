@@ -5,7 +5,7 @@
  > Webflow 网站在中国大陆的被 GFW 封控，无法访问。本仓库提供反向代理解决方案，两条路线可选，5 分钟恢复访问。
 
  **仓库**: `shenyeah/webflow-china-speedup`
- **最新 main 版本**: v2.6.1（2026-09-18；分支关系见 `docs/BRANCHES.md`，代码发布与客户部署分别记录）
+ **最新 main 版本**: v2.6.2（2026-09-18；分支关系见 `docs/BRANCHES.md`，代码发布与客户部署分别记录）
  **自动部署**: [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker) [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup)
 
  ---

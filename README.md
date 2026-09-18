@@ -76,7 +76,7 @@
 
 ## 当前版本与分支
 
-main：**v2.6.1**（2026-09-18），EdgeOne 路线增加静态 Blob 缓存回退并修复 CSS preload。配置模板中的测试域名需要按自己的站点调整。
+main：**v2.6.2**（2026-09-18），EdgeOne 路线增加静态 Blob 缓存回退、CSS preload 修复及 Site Acceleration 冷回源 Blob 复用。配置模板中的测试域名需要按自己的站点调整。
 
 - [版本更新](CHANGELOG.md)
 - [本地与 GitHub 分支索引](docs/BRANCHES.md)

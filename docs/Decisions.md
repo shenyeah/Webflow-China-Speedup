@@ -96,6 +96,16 @@
 
 **结果**: 同一 CSS 已连续返回 `HIT + blob`，两轮 10 次命中中位数约 301 ms。Blob 消除了 Webflow 回源和 CSS 重写成本，最终低延迟仍由 Site Acceleration 命中承担。
 
+---
+
+## ADR-010: 受信 Site Acceleration 冷回源优先复用 Blob
+
+**决策**: 仅当 `SITE_ACCELERATION_SECRET` 验证成功时，HTML 及非媒体静态资源忽略 EO 注入的内部 Range，并使用对外 EO 域名对应的 Blob 对象。静态预热即使 Cache API 写入成功也同步写入 Blob，以供其他回源节点复用。
+
+**边界**: 普通访客 Range，以及视频、音频和 PDF Range 继续绕过公共缓存并原样转发。staging 与 EO 的缓存对象不能混用，因为其 HTML、Canonical 和 CSS 内部 URL 使用不同公开域名。
+
+**验证**: 新 EO 外层缓存键首次 MISS 时，HTML 从 Blob 返回总耗时 577 ms，1.1 MB CSS 从 Blob 返回总耗时 1.74 秒；下一次外层 HIT 分别约 110 ms 和 245 ms。对照未预写 Blob 的同类 CSS 冷请求曾耗时约 21 秒。
+
 
 ---
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.6.2] — 2026-09-18
+
+### Site Acceleration 冷回源复用 Blob
+
+- **cache**: 带受信 Site Acceleration 密钥的 HTML、CSS、JS、字体和图片回源忽略 EO 内部 Range，优先使用 HTML/静态 Blob 缓存
+- **safety**: 普通访客 Range 及视频、音频、PDF Range 继续绕过公共缓存并原样转发
+- **verified**: EO 热缓存连续 5 次均为 `eo-cache-status: HIT`；HTML 中位 TTFB 56 ms，1.1 MB CSS 中位 TTFB 67 ms
+- **verified**: 预热后新 EO 外层缓存键首次 MISS 时，HTML 从 Blob 返回总耗时 577 ms，CSS 从 Blob 返回总耗时 1.74 秒；随后 EO HIT 分别约 104–110 ms 和 137–245 ms
+- **test**: EdgeOne 测试增加至 43 项并全部通过
+
 ## [v2.6.1] — 2026-09-18
 
 ### Makers 静态 Blob 缓存与 CSS preload 修复

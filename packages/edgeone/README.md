@@ -16,7 +16,7 @@
 
 ## 缓存架构
 
-v2.6.1 优先从 Makers KV 读取已经完成改写的 HTML 快照。KV 未绑定且显式配置 `SNAPSHOT_BLOB_STORE` 时，改用 Blob 作为备用持久快照；两者同时存在时 HTML 仍由 KV 负责。Makers 禁止 Cache API 写入时，8 MB 以内的 CSS、JS、字体和图片会写入同一 Blob Store 的独立 `assets/` 前缀。
+v2.6.2 优先从 Makers KV 读取已经完成改写的 HTML 快照。KV 未绑定且显式配置 `SNAPSHOT_BLOB_STORE` 时，改用 Blob 作为备用持久快照；两者同时存在时 HTML 仍由 KV 负责。Makers 禁止 Cache API 写入时，8 MB 以内的 CSS、JS、字体和图片会写入同一 Blob Store 的独立 `assets/` 前缀。
 
 | 层级 | 组件 | TTL | 说明 |
 |------|------|-----|------|
@@ -29,12 +29,12 @@ v2.6.1 优先从 Makers KV 读取已经完成改写的 HTML 快照。KV 未绑�
 - 仅中国大陆地区的 `GET`/`HEAD` 参与显式缓存查找。
 - HTML 持久快照默认 15 分钟后转为 STALE；用户仍立即得到旧快照，刷新在后台进行。
 - 带内容指纹的静态资源缓存 30 天；其他静态资源 1 天。
-- 带 `Cookie`、`Authorization`、`Range`、`no-cache/no-store` 的请求直接绕过。
+- 带 `Cookie`、`Authorization`、`Range`、`no-cache/no-store` 的请求直接绕过；受信 Site Acceleration 的非媒体内部 Range 除外。
 - 非 200、`Set-Cookie`、私有或 `no-store` 响应不写缓存；Geo 301 永不缓存。
 - 用 `X-EdgeFlow-Snapshot: FRESH|STALE|MISS` 判断持久快照状态。
 - 用 `X-EdgeFlow-Snapshot-Store: kv|blob` 确认实际使用的持久后端。
 - 用 `X-EdgeFlow-Cache: HIT|MISS|BYPASS` 判断整体缓存结果，不再根据耗时或 `Age` 猜测。
-- 用 `X-EdgeFlow-Cache-Store: STORE_OK|STORE_FAILED` 判断本次节点 Cache API 写入是否成功；该缓存仍只作为非关键临时层。
+- 用 `X-EdgeFlow-Cache-Store: STORE_OK|STORE_FAILED|STORE_BLOB_OK|STORE_CACHE_BLOB_OK` 判断本次写入位置和结果。
 - 用 `X-EdgeFlow-Cache-Class` 和 `X-EdgeFlow-Content-Class` 区分 HTML、字体、图片、CSS、JS 等资源。
 - 带功能性查询参数、Cookie、Authorization 或 Range 的请求不进入 HTML 公共快照；常见 tracking 参数会归一化。
 
@@ -63,6 +63,7 @@ KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑�
 | v2.5 | 增加可选 Blob 备用快照、KV 优先级、依赖打包和存储后端诊断头 |
 | v2.6 | 增加 `PUBLIC_HOST`、Cache API 写入诊断、资源分类、Sitemap 批量预热，并移除无意义的 `Accept/Vary` 变体 |
 | v2.6.1 | Cache API 被 Makers 禁止时使用 Blob 缓存静态资源，并修复 CSS preload 凭据与 SRI |
+| v2.6.2 | 受信 Site Acceleration 回源忽略非媒体内部 Range，冷节点优先复用 Blob |
 
 ## v2.0 修复内容
 

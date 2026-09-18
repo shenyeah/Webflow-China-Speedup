@@ -1,8 +1,9 @@
 /**
- * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.6.1)
+ * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.6.2)
  *
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║  改动记录                                                     ║
+ * ║  [v2.6.2] Site Acceleration 冷回源复用 Blob                  ║
  * ║  [v2.6.1] 静态 Blob 缓存回退 + CSS preload 修复             ║
  * ║  [v2.6.0] 公共域名重写 + 缓存诊断 + Sitemap 批量预热        ║
  * ║  [v2.5.0] Blob 备用 HTML 快照 + 依赖打包                     ║
@@ -105,7 +106,7 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
     const body = JSON.stringify({
       ok: true,
       runtime: "edgeone-pages",
-      version: "2.6.1",
+      version: "2.6.2",
       originConfigured: Boolean(cfg.originHost),
       publicHostConfigured: Boolean(cfg.publicHost),
       siteAccelerationOverrideConfigured: Boolean(
@@ -230,7 +231,7 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
   }
 
   const cachePlan = createCachePlan(request, publicUrl, target, cfg, country);
-  const assetBlobPlan = await createAssetBlobPlan(request, publicUrl, target, country, env);
+  const assetBlobPlan = await createAssetBlobPlan(request, publicUrl, target, cfg, country, env);
   let cacheLookupMs = 0;
   if (cachePlan.lookup) {
     const cacheLookupStartedAt = monotonicNow();
@@ -283,7 +284,12 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
     }
   }
 
-  const upstreamHeaders = buildUpstreamHeaders(request, publicUrl, target.upstreamHost);
+  const upstreamHeaders = buildUpstreamHeaders(
+    request,
+    publicUrl,
+    target.upstreamHost,
+    shouldIgnoreTrustedSiteRange(request, target, cfg)
+  );
 
   let upstreamResp;
   const originStartedAt = monotonicNow();
@@ -315,18 +321,21 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
     const cachedResponse = rewritten.clone();
     let cacheStoreStatus = "STORE_OK";
     let cacheStoreError = "";
+    let cacheStored = false;
     try {
       await cachePlan.cache.put(cachePlan.key, cachedResponse);
+      cacheStored = true;
     } catch (error) {
       cacheStoreStatus = "STORE_FAILED";
       cacheStoreError = normalizeCacheStoreError(error);
-      if (assetBlobPlan.store && canStoreAssetBlob(rewritten)) {
-        try {
-          await assetBlobPlan.adapter.put(assetBlobPlan.key, rewritten.clone());
-          cacheStoreStatus = "STORE_BLOB_OK";
-        } catch (blobError) {
-          cacheStoreError = `${cacheStoreError}|blob:${normalizeCacheStoreError(blobError)}`.slice(0, 160);
-        }
+    }
+    if (assetBlobPlan.store && canStoreAssetBlob(rewritten) && (!cacheStored || cfg.siteAccelerationOverride)) {
+      try {
+        await assetBlobPlan.adapter.put(assetBlobPlan.key, rewritten.clone());
+        cacheStoreStatus = cacheStored ? "STORE_CACHE_BLOB_OK" : "STORE_BLOB_OK";
+      } catch (blobError) {
+        const blobMessage = `blob:${normalizeCacheStoreError(blobError)}`;
+        cacheStoreError = cacheStoreError ? `${cacheStoreError}|${blobMessage}`.slice(0, 160) : blobMessage;
       }
     }
     const missResponse = withCacheStatus(
@@ -453,7 +462,9 @@ async function createSnapshotPlan(request, reqUrl, target, cfg, country, env, op
   if (hasPersonalizationCookies(request.headers.get("cookie"))) {
     return { ...base, store, reason: "snapshot-cookie" };
   }
-  if (request.headers.get("range")) return { ...base, store, reason: "snapshot-range" };
+  if (request.headers.get("range") && !shouldIgnoreTrustedSiteRange(request, target, cfg)) {
+    return { ...base, store, reason: "snapshot-range" };
+  }
   if (PRIVATE_PATH_RE.test(reqUrl.pathname)) return { ...base, store, reason: "snapshot-private-path" };
 
   const normalizedUrl = normalizeSnapshotUrl(reqUrl);
@@ -580,7 +591,7 @@ async function makeHashedKey(prefix, url) {
   return `${prefix}_fallback_${(hash >>> 0).toString(16)}`;
 }
 
-async function createAssetBlobPlan(request, reqUrl, target, country, env = {}) {
+async function createAssetBlobPlan(request, reqUrl, target, cfg, country, env = {}) {
   const method = request.method.toUpperCase();
   const rawStore = resolveRawBlobStore(env);
   const kind = classifyCacheKind(target);
@@ -591,7 +602,9 @@ async function createAssetBlobPlan(request, reqUrl, target, country, env = {}) {
   if (kind !== "static" && kind !== "fingerprinted-static") return { ...base, reason: "blob-non-static" };
   if (request.headers.get("authorization")) return { ...base, reason: "blob-authorization" };
   if (hasPersonalizationCookies(request.headers.get("cookie"))) return { ...base, reason: "blob-cookie" };
-  if (request.headers.get("range")) return { ...base, reason: "blob-range" };
+  if (request.headers.get("range") && !shouldIgnoreTrustedSiteRange(request, target, cfg)) {
+    return { ...base, reason: "blob-range" };
+  }
   const adapter = createBlobAssetAdapter(rawStore);
   return {
     lookup: true,
@@ -812,7 +825,9 @@ function createCachePlan(request, reqUrl, target, cfg, country) {
   if (country !== "CN") return { ...base, reason: country ? "geo" : "geo-unknown" };
   if (request.headers.get("authorization")) return { ...base, reason: "authorization" };
   if (hasPersonalizationCookies(request.headers.get("cookie"))) return { ...base, reason: "cookie" };
-  if (request.headers.get("range")) return { ...base, reason: "range" };
+  if (request.headers.get("range") && !shouldIgnoreTrustedSiteRange(request, target, cfg)) {
+    return { ...base, reason: "range" };
+  }
   if (PRIVATE_PATH_RE.test(reqUrl.pathname)) return { ...base, reason: "private-path" };
   if (base.kind === "html" && hasFunctionalQuery(reqUrl)) {
     return { ...base, reason: "functional-query" };
@@ -981,9 +996,10 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function buildUpstreamHeaders(request, reqUrl, upstreamHost) {
+function buildUpstreamHeaders(request, reqUrl, upstreamHost, stripRange = false) {
   const headers = new Headers(request.headers);
   headers.delete("x-edgeflow-site-secret");
+  if (stripRange) headers.delete("range");
   const upstreamCookie = stripEdgeOneAccessCookies(headers.get("cookie"));
   if (upstreamCookie) headers.set("cookie", upstreamCookie);
   else headers.delete("cookie");
@@ -992,6 +1008,12 @@ function buildUpstreamHeaders(request, reqUrl, upstreamHost) {
   headers.set("x-forwarded-proto", reqUrl.protocol.replace(":", ""));
   headers.set("accept-encoding", "identity");
   return headers;
+}
+
+function shouldIgnoreTrustedSiteRange(request, target, cfg) {
+  if (!cfg.siteAccelerationOverride || !request.headers.get("range")) return false;
+  const path = target && target.sourcePathname ? target.sourcePathname : "";
+  return !/\.(?:mp4|webm|ogg|mp3|pdf)$/i.test(path);
 }
 
 function hasPersonalizationCookies(cookieHeader) {

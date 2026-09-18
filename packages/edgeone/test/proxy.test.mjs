@@ -284,7 +284,7 @@ test("health response is minimal and contains no request or runtime dump", async
   ]);
   assert.equal(JSON.stringify(body).includes("203.0.113.8"), false);
   assert.equal(JSON.stringify(body).includes("private=value"), false);
-  assert.equal(body.version, "2.6.1");
+  assert.equal(body.version, "2.6.2");
   assert.equal(body.cacheApiAvailable, true);
   assert.equal(body.snapshotStoreAvailable, false);
   assert.equal(body.snapshotStoreType, null);
@@ -443,25 +443,90 @@ test("Blob stores rewritten static assets when Makers rejects CDN Cache API", as
     }
   };
   let fetchCount = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (_url, init) => {
     fetchCount += 1;
+    assert.equal(new Headers(init.headers).get("range"), null);
     return new Response("body{background:url(https://cdn.prod.website-files.com/site/a.jpg)}", {
       status: 200,
       headers: { "content-type": "text/css" }
     });
   };
-  const request = new Request("https://proxy.example.com/__eo_asset_v3__/cdn.prod.website-files.com/site/app.12345678.css");
+  const request = new Request("https://eo.example.com/__eo_asset_v3__/cdn.prod.website-files.com/site/app.12345678.css", {
+    headers: {
+      range: "bytes=0-",
+      "x-edgeflow-site-secret": "edge-secret"
+    }
+  });
+  const env = {
+    WEBFLOW_HOST: "origin.example.com",
+    PUBLIC_HOST: "staging.example.com",
+    SITE_ACCELERATION_PUBLIC_HOST: "eo.example.com",
+    SITE_ACCELERATION_SECRET: "edge-secret"
+  };
 
-  const first = await handleProxyRequest(request, { WEBFLOW_HOST: "origin.example.com" }, createContext());
+  const first = await handleProxyRequest(request, env, createContext());
   assert.equal(first.headers.get("x-edgeflow-cache"), "MISS");
   assert.equal(first.headers.get("x-edgeflow-cache-store"), "STORE_BLOB_OK");
   assert.match(first.headers.get("x-edgeflow-cache-store-error"), /forbidden-cdn-cache/);
 
-  const second = await handleProxyRequest(request, { WEBFLOW_HOST: "origin.example.com" }, createContext());
+  const second = await handleProxyRequest(request, env, createContext());
   assert.equal(second.headers.get("x-edgeflow-cache"), "HIT");
   assert.equal(second.headers.get("x-edgeflow-cache-reason"), "blob-static");
   assert.equal(second.headers.get("x-edgeflow-cache-backend"), "blob");
-  assert.match(await second.text(), /proxy\.example\.com\/__eo_asset_v3__/);
+  assert.match(await second.text(), /eo\.example\.com\/__eo_asset_v3__/);
+  assert.equal(fetchCount, 1);
+});
+
+test("ordinary Range requests still bypass shared caches", async () => {
+  let upstreamRange = "";
+  globalThis.fetch = async (_url, init) => {
+    upstreamRange = new Headers(init.headers).get("range") || "";
+    return new Response("partial", { status: 200, headers: { "content-type": "text/css" } });
+  };
+  const response = await handleProxyRequest(
+    new Request("https://proxy.example.com/__eo_asset_v3__/cdn.prod.website-files.com/site/app.12345678.css", {
+      headers: { range: "bytes=0-99" }
+    }),
+    { WEBFLOW_HOST: "origin.example.com" },
+    createContext()
+  );
+  assert.equal(response.headers.get("x-edgeflow-cache"), "BYPASS");
+  assert.equal(response.headers.get("x-edgeflow-cache-reason"), "range");
+  assert.equal(upstreamRange, "bytes=0-99");
+});
+
+test("trusted Site Acceleration prewarm persists static assets in Blob across cache nodes", async () => {
+  const blob = new MemoryBlob();
+  globalThis.EDGEFLOW_BLOB_STORE = blob;
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return new Response("body{color:#123}", {
+      status: 200,
+      headers: { "content-type": "text/css" }
+    });
+  };
+  const request = new Request("https://eo.example.com/__eo_asset_v3__/cdn.prod.website-files.com/site/app.12345678.css", {
+    headers: {
+      range: "bytes=0-",
+      "x-edgeflow-site-secret": "edge-secret"
+    }
+  });
+  const env = {
+    WEBFLOW_HOST: "origin.example.com",
+    PUBLIC_HOST: "staging.example.com",
+    SITE_ACCELERATION_PUBLIC_HOST: "eo.example.com",
+    SITE_ACCELERATION_SECRET: "edge-secret"
+  };
+
+  const first = await handleProxyRequest(request, env, createContext());
+  assert.equal(first.headers.get("x-edgeflow-cache"), "MISS");
+  assert.equal(first.headers.get("x-edgeflow-cache-store"), "STORE_CACHE_BLOB_OK");
+
+  globalThis.caches = { default: new MemoryCache() };
+  const second = await handleProxyRequest(request, env, createContext());
+  assert.equal(second.headers.get("x-edgeflow-cache"), "HIT");
+  assert.equal(second.headers.get("x-edgeflow-cache-backend"), "blob");
   assert.equal(fetchCount, 1);
 });
 
