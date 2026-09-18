@@ -60,11 +60,16 @@ class MemoryBlob {
   async get(key, options) {
     const value = this.items.get(key);
     if (value == null) return null;
-    return options?.type === "json" ? JSON.parse(value) : value;
+    if (options?.type === "json") return JSON.parse(value);
+    if (options?.type === "arrayBuffer") {
+      if (value instanceof ArrayBuffer) return value.slice(0);
+      return new TextEncoder().encode(String(value)).buffer;
+    }
+    return value;
   }
 
   async set(key, value) {
-    this.items.set(key, String(value));
+    this.items.set(key, value instanceof ArrayBuffer ? value.slice(0) : String(value));
   }
 }
 
@@ -279,7 +284,7 @@ test("health response is minimal and contains no request or runtime dump", async
   ]);
   assert.equal(JSON.stringify(body).includes("203.0.113.8"), false);
   assert.equal(JSON.stringify(body).includes("private=value"), false);
-  assert.equal(body.version, "2.6.0");
+  assert.equal(body.version, "2.6.1");
   assert.equal(body.cacheApiAvailable, true);
   assert.equal(body.snapshotStoreAvailable, false);
   assert.equal(body.snapshotStoreType, null);
@@ -420,8 +425,66 @@ test("Cache API write failures are visible and do not break delivery", async () 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-edgeflow-cache"), "MISS");
   assert.equal(response.headers.get("x-edgeflow-cache-store"), "STORE_FAILED");
+  assert.equal(
+    response.headers.get("x-edgeflow-cache-store-error"),
+    "Error:node-local-cache-rejected-response"
+  );
   assert.equal(response.headers.get("x-edgeflow-cache-class"), "fingerprinted-static");
   assert.equal(response.headers.get("x-edgeflow-content-class"), "font");
+});
+
+test("Blob stores rewritten static assets when Makers rejects CDN Cache API", async () => {
+  const blob = new MemoryBlob();
+  globalThis.EDGEFLOW_BLOB_STORE = blob;
+  globalThis.caches = {
+    default: {
+      async match() { return undefined; },
+      async put() { throw new Error("forbidden-cdn-cache"); }
+    }
+  };
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return new Response("body{background:url(https://cdn.prod.website-files.com/site/a.jpg)}", {
+      status: 200,
+      headers: { "content-type": "text/css" }
+    });
+  };
+  const request = new Request("https://proxy.example.com/__eo_asset_v3__/cdn.prod.website-files.com/site/app.12345678.css");
+
+  const first = await handleProxyRequest(request, { WEBFLOW_HOST: "origin.example.com" }, createContext());
+  assert.equal(first.headers.get("x-edgeflow-cache"), "MISS");
+  assert.equal(first.headers.get("x-edgeflow-cache-store"), "STORE_BLOB_OK");
+  assert.match(first.headers.get("x-edgeflow-cache-store-error"), /forbidden-cdn-cache/);
+
+  const second = await handleProxyRequest(request, { WEBFLOW_HOST: "origin.example.com" }, createContext());
+  assert.equal(second.headers.get("x-edgeflow-cache"), "HIT");
+  assert.equal(second.headers.get("x-edgeflow-cache-reason"), "blob-static");
+  assert.equal(second.headers.get("x-edgeflow-cache-backend"), "blob");
+  assert.match(await second.text(), /proxy\.example\.com\/__eo_asset_v3__/);
+  assert.equal(fetchCount, 1);
+});
+
+test("stylesheet rewrites remove stale integrity while preserving preload credentials mode", async () => {
+  globalThis.fetch = async () => htmlResponse([
+    "<html><head>",
+    '<link href="https://cdn.prod.website-files.com/site.css" rel="stylesheet" integrity="sha384-stale" crossorigin="anonymous">',
+    "</head><body>ok</body></html>"
+  ].join(""), {
+    headers: {
+      link: '<https://cdn.prod.website-files.com/site.css>; rel=preload; as=style; crossorigin'
+    }
+  });
+
+  const response = await handleProxyRequest(
+    new Request("https://proxy.example.com/"),
+    { WEBFLOW_HOST: "origin.example.com" },
+    createContext()
+  );
+  const html = await response.text();
+  assert.doesNotMatch(html, /integrity=/i);
+  assert.match(html, /crossorigin="anonymous"/i);
+  assert.match(response.headers.get("link"), /crossorigin/i);
 });
 
 test("functional HTML queries bypass Cache API while tracking queries normalize", async () => {
@@ -592,7 +655,7 @@ test("Link preload headers use the proxy host and China CDN mirror", async () =>
   globalThis.fetch = async () => htmlResponse("<html><body>ok</body></html>", {
     headers: {
       link: [
-        "<https://cdn.prod.website-files.com/site.css>; rel=preload; as=style",
+        '<https://cdn.prod.website-files.com/site.css>; rel=preload; as=style; crossorigin; integrity="sha384-stale"',
         "<https://cdnjs.cloudflare.com/ajax/libs/Swiper/11/swiper.css>; rel=preload; as=style"
       ].join(", ")
     }
@@ -605,6 +668,8 @@ test("Link preload headers use the proxy host and China CDN mirror", async () =>
   );
   const link = response.headers.get("link");
   assert.match(link, /proxy\.example\.com\/__eo_asset_v3__\/cdn\.prod\.website-files\.com\/site\.css/);
+  assert.match(link, /crossorigin/);
+  assert.doesNotMatch(link, /integrity/);
   assert.match(link, /cdn\.jsdmirror\.com\/ajax\/libs\/Swiper\/11\/swiper\.css/);
   assert.doesNotMatch(link, /cdnjs\.cloudflare\.com/);
 });

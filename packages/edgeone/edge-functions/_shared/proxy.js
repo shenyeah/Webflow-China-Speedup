@@ -1,8 +1,9 @@
 /**
- * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.6.0)
+ * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.6.1)
  *
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║  改动记录                                                     ║
+ * ║  [v2.6.1] 静态 Blob 缓存回退 + CSS preload 修复             ║
  * ║  [v2.6.0] 公共域名重写 + 缓存诊断 + Sitemap 批量预热        ║
  * ║  [v2.5.0] Blob 备用 HTML 快照 + 依赖打包                     ║
  * ║  [v2.4.0] KV 持久 HTML 快照 + 后台刷新 + 故障回退           ║
@@ -47,6 +48,8 @@ const FINGERPRINT_RE = /(?:^|[._/-])[a-f0-9]{8,}(?:[._/-]|$)/i;
 const EDGEFLOW_CACHE_HEADER = "x-edgeflow-cache";
 const EDGEFLOW_CACHE_REASON_HEADER = "x-edgeflow-cache-reason";
 const EDGEFLOW_CACHE_STORE_HEADER = "x-edgeflow-cache-store";
+const EDGEFLOW_CACHE_STORE_ERROR_HEADER = "x-edgeflow-cache-store-error";
+const EDGEFLOW_CACHE_BACKEND_HEADER = "x-edgeflow-cache-backend";
 const EDGEFLOW_CACHE_CLASS_HEADER = "x-edgeflow-cache-class";
 const EDGEFLOW_CONTENT_CLASS_HEADER = "x-edgeflow-content-class";
 const EDGEFLOW_SNAPSHOT_HEADER = "x-edgeflow-snapshot";
@@ -102,7 +105,7 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
     const body = JSON.stringify({
       ok: true,
       runtime: "edgeone-pages",
-      version: "2.6.0",
+      version: "2.6.1",
       originConfigured: Boolean(cfg.originHost),
       publicHostConfigured: Boolean(cfg.publicHost),
       siteAccelerationOverrideConfigured: Boolean(
@@ -227,6 +230,7 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
   }
 
   const cachePlan = createCachePlan(request, publicUrl, target, cfg, country);
+  const assetBlobPlan = await createAssetBlobPlan(request, publicUrl, target, country, env);
   let cacheLookupMs = 0;
   if (cachePlan.lookup) {
     const cacheLookupStartedAt = monotonicNow();
@@ -249,6 +253,33 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
           await cachePlan.cache.delete(cachePlan.key);
         } catch (_cacheDeleteError) {}
       }
+    }
+  }
+
+  if (assetBlobPlan.lookup) {
+    const blobLookupStartedAt = monotonicNow();
+    try {
+      const [record, body] = await Promise.all([
+        assetBlobPlan.adapter.getMeta(assetBlobPlan.key),
+        assetBlobPlan.adapter.getBody(assetBlobPlan.key)
+      ]);
+      if (isValidAssetRecord(record)) {
+        if (body !== null) {
+          const hit = responseFromAssetRecord(record, body, request.method);
+          const response = withCacheBackend(
+            withCacheStatus(hit, "HIT", request.method, "blob-static"),
+            "blob"
+          );
+          return withServerTiming(response, {
+            cacheStatus: "HIT",
+            cacheLookupMs: cacheLookupMs + elapsedMs(blobLookupStartedAt),
+            totalMs: elapsedMs(requestStartedAt)
+          });
+        }
+      }
+    } catch (_assetBlobReadError) {
+      assetBlobPlan.lookup = false;
+      assetBlobPlan.reason = "blob-read-error";
     }
   }
 
@@ -283,12 +314,29 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
   if (storeDecision.store) {
     const cachedResponse = rewritten.clone();
     let cacheStoreStatus = "STORE_OK";
+    let cacheStoreError = "";
     try {
       await cachePlan.cache.put(cachePlan.key, cachedResponse);
-    } catch (_cacheStoreError) {
+    } catch (error) {
       cacheStoreStatus = "STORE_FAILED";
+      cacheStoreError = normalizeCacheStoreError(error);
+      if (assetBlobPlan.store && canStoreAssetBlob(rewritten)) {
+        try {
+          await assetBlobPlan.adapter.put(assetBlobPlan.key, rewritten.clone());
+          cacheStoreStatus = "STORE_BLOB_OK";
+        } catch (blobError) {
+          cacheStoreError = `${cacheStoreError}|blob:${normalizeCacheStoreError(blobError)}`.slice(0, 160);
+        }
+      }
     }
-    const missResponse = withCacheStatus(rewritten, "MISS", request.method, cachePlan.kind, cacheStoreStatus);
+    const missResponse = withCacheStatus(
+      rewritten,
+      "MISS",
+      request.method,
+      cachePlan.kind,
+      cacheStoreStatus,
+      cacheStoreError
+    );
     return withServerTiming(snapshotDecision.store
       ? withSnapshotStatus(missResponse, "MISS", 0, "", snapshotPlan.backend)
       : missResponse, {
@@ -438,6 +486,18 @@ function resolveSnapshotBackend(env = {}) {
   }
 }
 
+function resolveRawBlobStore(env = {}) {
+  const injectedBlobStore = env.EDGEFLOW_BLOB_STORE || globalThis.EDGEFLOW_BLOB_STORE;
+  if (injectedBlobStore) return injectedBlobStore;
+  const blobStoreName = String(env.SNAPSHOT_BLOB_STORE || "").trim();
+  if (!blobStoreName) return null;
+  try {
+    return getBlobStore(blobStoreName);
+  } catch (_blobConfigError) {
+    return null;
+  }
+}
+
 function resolveKvSnapshotStore(env = {}) {
   if (env.EDGEFLOW_SNAPSHOT) return env.EDGEFLOW_SNAPSHOT;
   if (typeof EDGEFLOW_SNAPSHOT !== "undefined") return EDGEFLOW_SNAPSHOT;
@@ -456,6 +516,40 @@ function createBlobSnapshotAdapter(store) {
   };
 }
 
+function createBlobAssetAdapter(store) {
+  return {
+    getMeta(key) {
+      return store.get(`assets/${key}.json`, { type: "json", consistency: "strong" });
+    },
+    getBody(key) {
+      return store.get(`assets/${key}.body`, { type: "arrayBuffer", consistency: "strong" });
+    },
+    async put(key, response) {
+      const body = await response.arrayBuffer();
+      if (body.byteLength > 8 * 1024 * 1024) throw new Error("asset-too-large");
+      const headers = new Headers(response.headers);
+      headers.delete("content-length");
+      headers.delete("server-timing");
+      headers.delete(EDGEFLOW_CACHE_HEADER);
+      headers.delete(EDGEFLOW_CACHE_REASON_HEADER);
+      headers.delete(EDGEFLOW_CACHE_STORE_HEADER);
+      headers.delete(EDGEFLOW_CACHE_STORE_ERROR_HEADER);
+      headers.delete(EDGEFLOW_CACHE_BACKEND_HEADER);
+      headers.delete(EDGEFLOW_CACHE_CLASS_HEADER);
+      headers.delete(EDGEFLOW_CONTENT_CLASS_HEADER);
+      const record = {
+        version: SNAPSHOT_SCHEMA_VERSION,
+        storedAt: Date.now(),
+        status: response.status,
+        statusText: response.statusText,
+        headers: [...headers.entries()]
+      };
+      await store.set(`assets/${key}.body`, body, { cacheControl: "public, max-age=2592000" });
+      await store.set(`assets/${key}.json`, JSON.stringify(record), { cacheControl: "public, max-age=2592000" });
+    }
+  };
+}
+
 function normalizeSnapshotUrl(inputUrl) {
   const normalized = new URL(inputUrl.toString());
   for (const key of [...normalized.searchParams.keys()]) {
@@ -468,18 +562,73 @@ function normalizeSnapshotUrl(inputUrl) {
 }
 
 async function makeSnapshotKey(url) {
+  return makeHashedKey("html", url);
+}
+
+async function makeHashedKey(prefix, url) {
   const input = new TextEncoder().encode(url.toString());
   if (globalThis.crypto && globalThis.crypto.subtle) {
     const digest = await globalThis.crypto.subtle.digest("SHA-256", input);
     const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    return `html_${hex}`;
+    return `${prefix}_${hex}`;
   }
   let hash = 2166136261;
   for (const byte of input) {
     hash ^= byte;
     hash = Math.imul(hash, 16777619);
   }
-  return `html_fallback_${(hash >>> 0).toString(16)}`;
+  return `${prefix}_fallback_${(hash >>> 0).toString(16)}`;
+}
+
+async function createAssetBlobPlan(request, reqUrl, target, country, env = {}) {
+  const method = request.method.toUpperCase();
+  const rawStore = resolveRawBlobStore(env);
+  const kind = classifyCacheKind(target);
+  const base = { lookup: false, store: false, adapter: null, key: null, reason: "blob-unavailable" };
+  if (!rawStore) return base;
+  if (method !== "GET" && method !== "HEAD") return { ...base, reason: "blob-method" };
+  if (country !== "CN") return { ...base, reason: country ? "blob-geo" : "blob-geo-unknown" };
+  if (kind !== "static" && kind !== "fingerprinted-static") return { ...base, reason: "blob-non-static" };
+  if (request.headers.get("authorization")) return { ...base, reason: "blob-authorization" };
+  if (hasPersonalizationCookies(request.headers.get("cookie"))) return { ...base, reason: "blob-cookie" };
+  if (request.headers.get("range")) return { ...base, reason: "blob-range" };
+  const adapter = createBlobAssetAdapter(rawStore);
+  return {
+    lookup: true,
+    store: method === "GET",
+    adapter,
+    key: await makeHashedKey("asset", normalizeCacheUrl(reqUrl, kind)),
+    reason: "blob-miss"
+  };
+}
+
+function isValidAssetRecord(record) {
+  return Boolean(
+    record &&
+    record.version === SNAPSHOT_SCHEMA_VERSION &&
+    record.status === 200 &&
+    Number.isFinite(record.storedAt) &&
+    Array.isArray(record.headers)
+  );
+}
+
+function responseFromAssetRecord(record, body, method) {
+  const headers = new Headers(record.headers);
+  headers.delete("content-length");
+  headers.delete("server-timing");
+  return new Response(method === "HEAD" ? null : body, {
+    status: record.status,
+    statusText: record.statusText || "OK",
+    headers
+  });
+}
+
+function canStoreAssetBlob(response) {
+  if (response.status !== 200 || response.headers.get("set-cookie") || response.headers.get("content-range")) return false;
+  const contentClass = classifyContent(response);
+  if (!["css", "js", "font", "image"].includes(contentClass)) return false;
+  const length = Number(response.headers.get("content-length") || 0);
+  return !Number.isFinite(length) || length <= 8 * 1024 * 1024;
 }
 
 function isValidSnapshotRecord(record) {
@@ -724,13 +873,15 @@ function canStoreResponse(response, cachePlan) {
   return { store: true, reason: "" };
 }
 
-function withCacheStatus(response, status, method, reason, storeStatus = "") {
+function withCacheStatus(response, status, method, reason, storeStatus = "", storeError = "") {
   const headers = new Headers(response.headers);
   headers.set(EDGEFLOW_CACHE_HEADER, status);
   headers.set(EDGEFLOW_CACHE_CLASS_HEADER, normalizeCacheClass(reason, response));
   headers.set(EDGEFLOW_CONTENT_CLASS_HEADER, classifyContent(response));
   if (storeStatus) headers.set(EDGEFLOW_CACHE_STORE_HEADER, storeStatus);
   else headers.delete(EDGEFLOW_CACHE_STORE_HEADER);
+  if (storeError) headers.set(EDGEFLOW_CACHE_STORE_ERROR_HEADER, storeError);
+  else headers.delete(EDGEFLOW_CACHE_STORE_ERROR_HEADER);
   if (reason) headers.set(EDGEFLOW_CACHE_REASON_HEADER, reason);
   else headers.delete(EDGEFLOW_CACHE_REASON_HEADER);
   return new Response(method === "HEAD" ? null : response.body, {
@@ -740,8 +891,30 @@ function withCacheStatus(response, status, method, reason, storeStatus = "") {
   });
 }
 
+function withCacheBackend(response, backend) {
+  const headers = new Headers(response.headers);
+  if (backend) headers.set(EDGEFLOW_CACHE_BACKEND_HEADER, backend);
+  else headers.delete(EDGEFLOW_CACHE_BACKEND_HEADER);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function normalizeCacheStoreError(error) {
+  const name = error && typeof error.name === "string" ? error.name : "Error";
+  const message = error && typeof error.message === "string" ? error.message : String(error || "unknown");
+  return `${name}:${message}`
+    .replace(/https?:\/\/[^\s]+/gi, "url")
+    .replace(/[^\x20-\x7e]/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 160);
+}
+
 function normalizeCacheClass(reason, response) {
   if (reason === "html" || reason === "snapshot" || String(reason).startsWith("snapshot-")) return "html";
+  if (reason === "blob-static") return "static";
   if (reason === "static" || reason === "fingerprinted-static") return reason;
   const contentClass = classifyContent(response);
   return contentClass === "html" ? "html" : "bypass";
@@ -921,7 +1094,15 @@ function rewriteLocationHeader(headers, requestUrl, cfg) {
 function rewriteLinkHeader(headers, requestUrl, cfg) {
   const link = headers.get("link");
   if (!link) return;
-  headers.set("link", rewriteChinaCdnTokens(rewriteDomainTokens(link, requestUrl, cfg), cfg));
+  const rewritten = rewriteChinaCdnTokens(rewriteDomainTokens(link, requestUrl, cfg), cfg);
+  const normalized = rewritten
+    .split(/,(?=\s*<)/)
+    .map((entry) => {
+      if (!/\brel\s*=\s*preload\b/i.test(entry) || !/\bas\s*=\s*style\b/i.test(entry)) return entry;
+      return entry.replace(/;\s*integrity\s*=\s*(?:"[^"]*"|'[^']*'|[^;,\s]+)/gi, "");
+    })
+    .join(",");
+  headers.set("link", normalized);
 }
 
 function dropUnsafeUpstreamHeaders(headers, publicHost) {
@@ -1117,7 +1298,6 @@ function stripCssIntegrity(input) {
     /<link\b([^>]*?\brel\s*=\s*["']stylesheet["'])([^>]*)>/gi,
     (_, relAttr, rest) => {
       rest = rest.replace(/\s*integrity\s*=\s*["'][^"']*["']/gi, "");
-      rest = rest.replace(/\s*crossorigin\s*=\s*["'][^"']*["']/gi, "");
       return `<link${relAttr}${rest}>`;
     }
   );

@@ -1,5 +1,16 @@
 # Changelog
 
+## [v2.6.1] — 2026-09-18
+
+### Makers 静态 Blob 缓存与 CSS preload 修复
+
+- **cache**: Makers 返回 `forbidden-cdn-cache` 时，将 8 MB 以内的 CSS、JS、字体和图片持久写入 Blob
+- **cache**: Blob 静态资源使用强一致并行读取，避免刚写入后重复 MISS 和再次回源
+- **observability**: 增加 Cache API 失败原因及实际缓存后端响应头
+- **fix**: 保留 stylesheet 的 `crossorigin`，并移除已改写 CSS preload 的失效 SRI 哈希
+- **verified**: `tectura-v26-staging` 上 1.1 MB CSS 连续请求稳定 `HIT + blob`；两轮共 10 次命中中位数约 301 ms，范围 134–934 ms
+- **test**: EdgeOne 测试增加至 41 项并全部通过
+
 ## [v2.6.0] — 2026-09-08
 
 ### 腾讯云 Site Acceleration 支持

@@ -86,6 +86,16 @@
 
 **实测套餐边界**: 现有套餐允许 30 天静态节点缓存、缓存预刷新、Brotli/Gzip、HTTP/2 和免费证书，但拒绝 QUIC/HTTP/3 与自定义 Cache Key。按“不购买/不升级”约束保留 HTTP/2；追踪参数仅在 Makers 内层归一化，EdgeOne 外层可能产生重复 HTML 缓存对象。
 
+---
+
+## ADR-009: Makers Cache API 被禁止时使用 Blob 保存小型静态资源
+
+**决策**: v2.6.1 在收到 `forbidden-cdn-cache` 后，将 8 MB 以内的 CSS、JS、字体和图片写入 `SNAPSHOT_BLOB_STORE` 的 `assets/` 前缀。读取使用强一致并行请求；Site Acceleration 继续负责更靠近用户的边缘缓存。
+
+**背景**: 线上诊断确认 `caches.default.put()` 被 Makers 运行时明确拒绝。1.1 MB CSS 因而每次回源并重复全量改写，单次可耗时 1–5 秒。
+
+**结果**: 同一 CSS 已连续返回 `HIT + blob`，两轮 10 次命中中位数约 301 ms。Blob 消除了 Webflow 回源和 CSS 重写成本，最终低延迟仍由 Site Acceleration 命中承担。
+
 
 ---
 
