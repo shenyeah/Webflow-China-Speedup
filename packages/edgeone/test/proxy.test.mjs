@@ -109,6 +109,37 @@ afterEach(() => {
   else globalThis.EDGEFLOW_BLOB_STORE = originalBlobStore;
 });
 
+test("NOINDEX_HOSTS controls the final EdgeOne response by public hostname", async () => {
+  const matching = await handleProxyRequest(
+    new Request("https://preview.example.com/robots.txt"),
+    { NOINDEX_HOSTS: " preview.example.com , , staging.example.com" },
+    createContext()
+  );
+  assert.equal(matching.headers.get("x-robots-tag"), "noindex, nofollow");
+
+  const nonMatching = await handleProxyRequest(
+    new Request("https://www.example.com/robots.txt"),
+    { NOINDEX_HOSTS: "preview.example.com" },
+    createContext()
+  );
+  assert.equal(nonMatching.headers.get("x-robots-tag"), null);
+});
+
+test("NOINDEX_HOSTS uses the trusted Site Acceleration public host", async () => {
+  const response = await handleProxyRequest(
+    new Request("https://internal-origin.example/robots.txt", {
+      headers: { "x-edgeflow-site-secret": "test-secret" }
+    }),
+    {
+      NOINDEX_HOSTS: "PUBLIC.EXAMPLE.COM",
+      SITE_ACCELERATION_PUBLIC_HOST: "public.example.com",
+      SITE_ACCELERATION_SECRET: "test-secret"
+    },
+    createContext()
+  );
+  assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow");
+});
+
 test("public CN HTML is cached with observable MISS then HIT", async () => {
   let fetchCount = 0;
   globalThis.fetch = async () => {
@@ -284,7 +315,7 @@ test("health response is minimal and contains no request or runtime dump", async
   ]);
   assert.equal(JSON.stringify(body).includes("203.0.113.8"), false);
   assert.equal(JSON.stringify(body).includes("private=value"), false);
-  assert.equal(body.version, "2.6.2");
+  assert.equal(body.version, "2.7.0");
   assert.equal(body.cacheApiAvailable, true);
   assert.equal(body.snapshotStoreAvailable, false);
   assert.equal(body.snapshotStoreType, null);

@@ -45,8 +45,19 @@
 | 变量 | 值 |
 |---|---|
 | `WEBFLOW_HOST` | `xxx.webflow.io`（你的 Webflow 项目地址） |
+| `NOINDEX_HOSTS` | 测试期间禁止收录的公开域名，多个域名用英文逗号分隔（可选） |
 
 代码已内置 `webflowcn.webflow.io` 作为默认值，**零配置即可运行**。
+
+### SEO 隔离与正式发布
+
+绑定域名不等于允许搜索引擎收录。测试期间可在平台环境变量中设置：
+
+```env
+NOINDEX_HOSTS=preview.example.com,www.example.com
+```
+
+列表中的域名会在所有最终响应上收到 `X-Robots-Tag: noindex, nofollow`。正式发布时只需从列表移除正式域名并重新部署，无需修改 Webflow 或应用代码。未配置或留空时保持原有行为。
 
 ---
 
@@ -76,7 +87,7 @@
 
 ## 当前版本与分支
 
-main：**v2.6.2**（2026-09-18），EdgeOne 路线增加静态 Blob 缓存回退、CSS preload 修复及 Site Acceleration 冷回源 Blob 复用。配置模板中的测试域名需要按自己的站点调整。
+main：**v2.7.0**（2026-09-21），EdgeOne 与 Cloudflare Worker 增加可配置的域名级 SEO 隔离；通过 `NOINDEX_HOSTS` 将域名绑定与搜索引擎公开解耦。
 
 - [版本更新](CHANGELOG.md)
 - [本地与 GitHub 分支索引](docs/BRANCHES.md)

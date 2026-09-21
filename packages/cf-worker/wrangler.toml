@@ -5,6 +5,10 @@
  name = "webflow-china-speedup"
  main = "worker.js"
  compatibility_date = "2026-05-07"
+
+# 可选：禁止搜索引擎收录的公开域名，多个域名用英文逗号分隔
+# [vars]
+# NOINDEX_HOSTS = "preview.example.com,www.example.com"
  
  [placement]
  mode = "smart"

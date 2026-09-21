@@ -24,8 +24,11 @@
  1. 点击 **Deploy** → Worker + R2 Bucket 自动创建、绑定、部署
  2. 部署完成后 → **Triggers** → **Custom Domains** → 添加你的域名
  3. 要代理你自己的网站，在 Dashboard → Settings → Variables 添加：`WEBFLOW_HOST` = 你的 `xxx.webflow.io`
+ 4. 测试期间如需阻止收录，添加：`NOINDEX_HOSTS` = `preview.example.com,www.example.com`
  
  完成。
+
+`NOINDEX_HOSTS` 支持多个逗号分隔的公开域名，匹配时在最终响应添加 `X-Robots-Tag: noindex, nofollow`。正式发布时从列表移除正式域名并重新部署即可；绑定域名与 SEO 上线互不绑定。
 
 ### 方式 B：Fork 后部署（稳定性更好）
 

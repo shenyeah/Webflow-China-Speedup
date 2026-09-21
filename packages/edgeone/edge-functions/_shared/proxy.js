@@ -1,8 +1,9 @@
 /**
- * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.6.2)
+ * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.7.0)
  *
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║  改动记录                                                     ║
+ * ║  [v2.7.0] 可配置域名级 SEO 隔离                              ║
  * ║  [v2.6.2] Site Acceleration 冷回源复用 Blob                  ║
  * ║  [v2.6.1] 静态 Blob 缓存回退 + CSS preload 修复             ║
  * ║  [v2.6.0] 公共域名重写 + 缓存诊断 + Sitemap 批量预热        ║
@@ -92,6 +93,13 @@ function getClientCountry(request, context = {}) {
 }
 
 export async function handleProxyRequest(request, env = {}, context = {}) {
+  const response = await executeProxyRequest(request, env, context);
+  const cfg = resolveRequestSiteConfig(request, env);
+  const publicHostname = resolvePublicUrl(new URL(request.url), cfg).hostname;
+  return applySeoIsolation(response, publicHostname, env.NOINDEX_HOSTS);
+}
+
+async function executeProxyRequest(request, env = {}, context = {}) {
   const requestStartedAt = monotonicNow();
   const reqUrl = new URL(request.url);
   const cfg = resolveRequestSiteConfig(request, env);
@@ -106,7 +114,7 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
     const body = JSON.stringify({
       ok: true,
       runtime: "edgeone-pages",
-      version: "2.6.2",
+      version: "2.7.0",
       originConfigured: Boolean(cfg.originHost),
       publicHostConfigured: Boolean(cfg.publicHost),
       siteAccelerationOverrideConfigured: Boolean(
@@ -385,6 +393,40 @@ export async function handleProxyRequest(request, env = {}, context = {}) {
     rewriteMs,
     totalMs: elapsedMs(requestStartedAt)
   });
+}
+
+export function applySeoIsolation(response, requestHostname, configuredHosts) {
+  const noindexHosts = parseNoindexHosts(configuredHosts);
+  const hostname = normalizeSeoHostname(requestHostname);
+  if (!hostname || !noindexHosts.has(hostname)) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("x-robots-tag", "noindex, nofollow");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function parseNoindexHosts(value) {
+  return new Set(
+    String(value || "")
+      .split(",")
+      .map(normalizeSeoHostname)
+      .filter(Boolean)
+  );
+}
+
+function normalizeSeoHostname(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  try {
+    const parsed = new URL(input.includes("://") ? input : `https://${input}`);
+    return parsed.hostname.toLowerCase().replace(/\.$/, "");
+  } catch (_error) {
+    return "";
+  }
 }
 
 function resolveSiteConfig(env) {

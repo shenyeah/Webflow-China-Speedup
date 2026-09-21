@@ -1,5 +1,13 @@
 # Changelog
 
+## [v2.7.0] — 2026-09-21
+
+### 可配置 SEO 隔离
+
+- **feat**: EdgeOne 与 Cloudflare Worker 支持 `NOINDEX_HOSTS`，按公开请求域名在最终响应添加 `X-Robots-Tag: noindex, nofollow`
+- **safety**: 域名绑定与 SEO 上线解耦；空配置保持原行为，修改环境变量即可切换收录状态
+- **test**: 覆盖匹配、非匹配、多域名、大小写、空白、空配置及 Site Acceleration 外部域名
+
 ## [v2.6.2] — 2026-09-18
 
 ### Site Acceleration 冷回源复用 Blob

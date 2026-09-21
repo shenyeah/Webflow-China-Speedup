@@ -16,7 +16,7 @@
 
 ## 缓存架构
 
-v2.6.2 优先从 Makers KV 读取已经完成改写的 HTML 快照。KV 未绑定且显式配置 `SNAPSHOT_BLOB_STORE` 时，改用 Blob 作为备用持久快照；两者同时存在时 HTML 仍由 KV 负责。Makers 禁止 Cache API 写入时，8 MB 以内的 CSS、JS、字体和图片会写入同一 Blob Store 的独立 `assets/` 前缀。
+v2.7.0 在 v2.6.2 缓存能力基础上增加可配置的域名级 SEO 隔离。Makers 优先从 KV 读取已经完成改写的 HTML 快照；KV 未绑定且显式配置 `SNAPSHOT_BLOB_STORE` 时，改用 Blob 作为备用持久快照。
 
 | 层级 | 组件 | TTL | 说明 |
 |------|------|-----|------|
@@ -64,6 +64,7 @@ KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑�
 | v2.6 | 增加 `PUBLIC_HOST`、Cache API 写入诊断、资源分类、Sitemap 批量预热，并移除无意义的 `Accept/Vary` 变体 |
 | v2.6.1 | Cache API 被 Makers 禁止时使用 Blob 缓存静态资源，并修复 CSS preload 凭据与 SRI |
 | v2.6.2 | 受信 Site Acceleration 回源忽略非媒体内部 Range，冷节点优先复用 Blob |
+| v2.7.0 | 增加 `NOINDEX_HOSTS`，让域名绑定与 SEO 上线独立控制 |
 
 ## v2.0 修复内容
 
@@ -153,6 +154,7 @@ npm run audit:live -- https://你的域名 --disable-browser-cache
  | 变量名 | 必填 | 说明 |
  |--------|------|------|
  | `WEBFLOW_HOST` | 可选 | 你的 Webflow 项目地址（默认 `webflowcn.webflow.io`）|
+ | `NOINDEX_HOSTS` | 可选 | 禁止搜索引擎收录的公开域名列表，以英文逗号分隔；匹配域名的最终响应会添加 `X-Robots-Tag: noindex, nofollow` |
  | `PUBLIC_HOST` | 可选 | 当前 Makers 线路自身的公开域名；HTML、Canonical、资源链接和跳转统一改写到该域名 |
  | `SITE_ACCELERATION_PUBLIC_HOST` | 可选 | 同一 Makers 项目作为 Site Acceleration 回源时使用的外部域名；仅在密钥验证通过后生效 |
  | `SITE_ACCELERATION_SECRET` | 可选 | 由 EdgeOne 回源规则注入的随机密钥；只能放在控制台环境变量，不要提交到 Git |

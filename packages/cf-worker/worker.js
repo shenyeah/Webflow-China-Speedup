@@ -25,6 +25,12 @@ const BUILD_DEPLOY_TIME = "__BUILD_DEPLOY_TIME__";
 
 export default {
   async fetch(req, env, ctx) {
+    const response = await handleRequest(req, env, ctx);
+    return applySeoIsolation(response, new URL(req.url).hostname, env.NOINDEX_HOSTS);
+  }
+};
+
+async function handleRequest(req, env, ctx) {
     const url = new URL(req.url);
     const pathname = url.pathname;
 
@@ -354,8 +360,41 @@ export default {
 
     // 6️⃣ 其余流量透传
     return originResp;
+}
+
+export function applySeoIsolation(response, requestHostname, configuredHosts) {
+  const noindexHosts = parseNoindexHosts(configuredHosts);
+  const hostname = normalizeSeoHostname(requestHostname);
+  if (!hostname || !noindexHosts.has(hostname)) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("x-robots-tag", "noindex, nofollow");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function parseNoindexHosts(value) {
+  return new Set(
+    String(value || "")
+      .split(",")
+      .map(normalizeSeoHostname)
+      .filter(Boolean)
+  );
+}
+
+function normalizeSeoHostname(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  try {
+    const parsed = new URL(input.includes("://") ? input : `https://${input}`);
+    return parsed.hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return "";
   }
-};
+}
 
 /**
  * 将 Webflow CDN / CloudFront 资产 URL 重写到 /_cdn/ 路径
