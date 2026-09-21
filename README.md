@@ -87,7 +87,7 @@ NOINDEX_HOSTS=preview.example.com,www.example.com
 
 ## 当前版本与分支
 
-main：**v2.7.0**（2026-09-21），EdgeOne 与 Cloudflare Worker 增加可配置的域名级 SEO 隔离；通过 `NOINDEX_HOSTS` 将域名绑定与搜索引擎公开解耦。
+main：**v2.8.0**（2026-09-21），EdgeOne 默认启用 `edgeflow-snapshots` Blob 持久缓存；同时保留 v2.7.0 的可配置域名级 SEO 隔离。
 
 - [版本更新](CHANGELOG.md)
 - [本地与 GitHub 分支索引](docs/BRANCHES.md)

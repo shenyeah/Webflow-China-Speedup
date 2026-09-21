@@ -315,7 +315,7 @@ test("health response is minimal and contains no request or runtime dump", async
   ]);
   assert.equal(JSON.stringify(body).includes("203.0.113.8"), false);
   assert.equal(JSON.stringify(body).includes("private=value"), false);
-  assert.equal(body.version, "2.7.0");
+  assert.equal(body.version, "2.8.0");
   assert.equal(body.cacheApiAvailable, true);
   assert.equal(body.snapshotStoreAvailable, false);
   assert.equal(body.snapshotStoreType, null);
@@ -974,6 +974,18 @@ test("KV remains the preferred snapshot backend when Blob is also configured", a
   await settle(context);
   assert.equal(kv.items.size, 1);
   assert.equal(blob.items.size, 0);
+});
+
+test("SNAPSHOT_BLOB_STORE=off disables the default Blob backend", async () => {
+  globalThis.EDGEFLOW_BLOB_STORE = new MemoryBlob();
+  const response = await handleProxyRequest(
+    new Request("https://proxy.example.com/__proxy/health"),
+    { WEBFLOW_HOST: "origin.example.com", SNAPSHOT_BLOB_STORE: "off" },
+    createContext()
+  );
+  const body = await response.json();
+  assert.equal(body.snapshotStoreAvailable, false);
+  assert.equal(body.snapshotStoreType, null);
 });
 
 test("invalid Blob store configuration degrades without breaking health", async () => {

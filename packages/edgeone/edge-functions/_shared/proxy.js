@@ -1,8 +1,9 @@
 /**
- * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.7.0)
+ * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.8.0)
  *
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║  改动记录                                                     ║
+ * ║  [v2.8.0] 默认启用 Blob 持久缓存                             ║
  * ║  [v2.7.0] 可配置域名级 SEO 隔离                              ║
  * ║  [v2.6.2] Site Acceleration 冷回源复用 Blob                  ║
  * ║  [v2.6.1] 静态 Blob 缓存回退 + CSS preload 修复             ║
@@ -22,6 +23,7 @@ import { getStore as getBlobStore } from "@edgeone/pages-blob";
 
 const DEFAULT_CONFIG = {
   originHost: "webflowcn.webflow.io",
+  blobStoreName: "edgeflow-snapshots",
   assetProxyPrefix: "/__eo_asset_v3__",
   proxyableHosts: [
     "website-files.com",
@@ -114,7 +116,7 @@ async function executeProxyRequest(request, env = {}, context = {}) {
     const body = JSON.stringify({
       ok: true,
       runtime: "edgeone-pages",
-      version: "2.7.0",
+      version: "2.8.0",
       originConfigured: Boolean(cfg.originHost),
       publicHostConfigured: Boolean(cfg.publicHost),
       siteAccelerationOverrideConfigured: Boolean(
@@ -527,11 +529,12 @@ function resolveSnapshotBackend(env = {}) {
   const kvStore = resolveKvSnapshotStore(env);
   if (kvStore) return { type: "kv", store: kvStore };
 
+  const blobStoreName = resolveBlobStoreName(env);
+  if (!blobStoreName) return null;
+
   const injectedBlobStore = env.EDGEFLOW_BLOB_STORE || globalThis.EDGEFLOW_BLOB_STORE;
   if (injectedBlobStore) return { type: "blob", store: createBlobSnapshotAdapter(injectedBlobStore) };
 
-  const blobStoreName = String(env.SNAPSHOT_BLOB_STORE || "").trim();
-  if (!blobStoreName) return null;
   try {
     return { type: "blob", store: createBlobSnapshotAdapter(getBlobStore(blobStoreName)) };
   } catch (_blobConfigError) {
@@ -540,15 +543,21 @@ function resolveSnapshotBackend(env = {}) {
 }
 
 function resolveRawBlobStore(env = {}) {
+  const blobStoreName = resolveBlobStoreName(env);
+  if (!blobStoreName) return null;
   const injectedBlobStore = env.EDGEFLOW_BLOB_STORE || globalThis.EDGEFLOW_BLOB_STORE;
   if (injectedBlobStore) return injectedBlobStore;
-  const blobStoreName = String(env.SNAPSHOT_BLOB_STORE || "").trim();
-  if (!blobStoreName) return null;
   try {
     return getBlobStore(blobStoreName);
   } catch (_blobConfigError) {
     return null;
   }
+}
+
+function resolveBlobStoreName(env = {}) {
+  const configured = String(env.SNAPSHOT_BLOB_STORE ?? DEFAULT_CONFIG.blobStoreName).trim();
+  if (/^(?:off|false|disabled|none)$/i.test(configured)) return "";
+  return configured;
 }
 
 function resolveKvSnapshotStore(env = {}) {

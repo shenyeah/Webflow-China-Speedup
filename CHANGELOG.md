@@ -1,5 +1,14 @@
 # Changelog
 
+## [v2.8.0] — 2026-09-21
+
+### 默认启用 Blob 持久缓存
+
+- **cache**: EdgeOne 未配置 `SNAPSHOT_BLOB_STORE` 时默认使用 `edgeflow-snapshots`
+- **fallback**: Cache API 被 Makers 禁止时，HTML 快照和 8 MB 以内静态资源自动回退到 Blob
+- **control**: 设置 `SNAPSHOT_BLOB_STORE=off` 可显式关闭 Blob；已绑定 KV 时仍保持 KV 优先
+- **verified**: `tectura-cn` 线上确认 HTML `MISS → FRESH/HIT`，CSS `STORE_BLOB_OK → HIT + blob`
+
 ## [v2.7.0] — 2026-09-21
 
 ### 可配置 SEO 隔离

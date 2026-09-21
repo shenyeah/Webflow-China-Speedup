@@ -16,7 +16,7 @@
 
 ## 缓存架构
 
-v2.7.0 在 v2.6.2 缓存能力基础上增加可配置的域名级 SEO 隔离。Makers 优先从 KV 读取已经完成改写的 HTML 快照；KV 未绑定且显式配置 `SNAPSHOT_BLOB_STORE` 时，改用 Blob 作为备用持久快照。
+Makers 优先从 KV 读取已经完成改写的 HTML 快照；KV 未绑定时默认使用 Blob Store `edgeflow-snapshots` 作为备用持久快照，无需预先创建。设置 `SNAPSHOT_BLOB_STORE=off` 可完全关闭 Blob。
 
 | 层级 | 组件 | TTL | 说明 |
 |------|------|-----|------|
@@ -48,7 +48,7 @@ v2.7.0 在 v2.6.2 缓存能力基础上增加可配置的域名级 SEO 隔离。
 | KV 持久存储 | 2026.05 | v2.4 用于保存已重写 HTML 和最后成功版本 |
 | Blob 对象存储 | 2026.06 | 可作为无需 KV 绑定的备用快照后端；需引入官方 SDK，且不建议当公网 CDN 使用 |
 
-KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑定变量名固定为 `EDGEFLOW_SNAPSHOT`。Blob 不需要控制台绑定；设置 `SNAPSHOT_BLOB_STORE` 后，首次实际读写会自动创建同名 Store。Blob 默认关闭，不能填写与现有 KV 变量相同的值来代替绑定。
+KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑定变量名固定为 `EDGEFLOW_SNAPSHOT`。Blob 不需要控制台绑定；默认使用 `edgeflow-snapshots`，首次实际读写会自动创建。不能填写与现有 KV 变量相同的值来代替绑定。
 
 ## 版本历史
 
@@ -65,6 +65,7 @@ KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑�
 | v2.6.1 | Cache API 被 Makers 禁止时使用 Blob 缓存静态资源，并修复 CSS preload 凭据与 SRI |
 | v2.6.2 | 受信 Site Acceleration 回源忽略非媒体内部 Range，冷节点优先复用 Blob |
 | v2.7.0 | 增加 `NOINDEX_HOSTS`，让域名绑定与 SEO 上线独立控制 |
+| v2.8.0 | 默认启用 `edgeflow-snapshots` Blob 持久缓存，并支持用 `off` 显式关闭 |
 
 ## v2.0 修复内容
 
@@ -160,7 +161,7 @@ npm run audit:live -- https://你的域名 --disable-browser-cache
  | `SITE_ACCELERATION_SECRET` | 可选 | 由 EdgeOne 回源规则注入的随机密钥；只能放在控制台环境变量，不要提交到 Git |
  | `CACHE_TTL` | 可选 | HTML 显式缓存 TTL，默认 300 秒 |
  | `SNAPSHOT_TTL` | 可选 | KV/Blob HTML 快照新鲜期，默认 900 秒 |
- | `SNAPSHOT_BLOB_STORE` | 可选 | 启用 Blob HTML 备用快照及静态缓存回退；建议值 `edgeflow-snapshots`，未设置则关闭 |
+ | `SNAPSHOT_BLOB_STORE` | 可选 | Blob HTML 备用快照及静态缓存回退；默认 `edgeflow-snapshots`，设置 `off` 可关闭 |
  | `SNAPSHOT_PATHS` | 可选 | Sitemap 不可用时的主动刷新备用页面列表，默认 `/` |
  | `SNAPSHOT_REFRESH_SECRET` | 可选 | 主动刷新端点密钥；必须放在控制台环境变量，不要提交到 Git |
  | `MIRROR_JQUERY` | 可选 | jQuery 国内镜像地址 |
@@ -168,7 +169,7 @@ npm run audit:live -- https://你的域名 --disable-browser-cache
 | `MIRROR_WEBFONT` | 可选 | WebFont loader 国内镜像 |
 | `ASSET_PROXY_PREFIX` | 可选 | 资源代理路径前缀（默认 `/__eo_asset_v3__`） |
 
-KV 本身不是普通环境变量。在 Makers 控制台把目标命名空间绑定为 `EDGEFLOW_SNAPSHOT` 后，函数会自动启用 KV 持久 HTML 快照。Blob 通过普通环境变量 `SNAPSHOT_BLOB_STORE` 显式开启；Store 由官方 SDK 首次调用时自动创建。两者同时存在时 HTML 使用 KV，静态资源继续使用 Blob 的 `assets/` 前缀。
+KV 本身不是普通环境变量。在 Makers 控制台把目标命名空间绑定为 `EDGEFLOW_SNAPSHOT` 后，函数会自动启用 KV 持久 HTML 快照。Blob Store 默认名为 `edgeflow-snapshots`，由官方 SDK 首次调用时自动创建。两者同时存在时 HTML 使用 KV，静态资源继续使用 Blob 的 `assets/` 前缀。
 
 主动刷新默认读取源站 Sitemap，最多预热 20 个 HTML 页面：
 
