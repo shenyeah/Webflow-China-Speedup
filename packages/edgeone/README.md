@@ -66,6 +66,7 @@ KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑�
 | v2.6.2 | 受信 Site Acceleration 回源忽略非媒体内部 Range，冷节点优先复用 Blob |
 | v2.7.0 | 增加 `NOINDEX_HOSTS`，让域名绑定与 SEO 上线独立控制 |
 | v2.8.0 | 默认启用 `edgeflow-snapshots` Blob 持久缓存，并支持用 `off` 显式关闭 |
+| v2.9.0 | 正式自定义源站、显式海外跳转、发布缓存隔离、无指纹资源过期与 Sitemap 分页预热 |
 
 ## v2.0 修复内容
 
@@ -85,8 +86,8 @@ KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑�
  3. 打开 [腾讯云 EdgeOne 控制台](https://console.cloud.tencent.com/edgeone) → Pages → 新建项目
  4. 选择「从 Git 导入」，Root directory 选择根目录 `/`（默认值，无需修改）
  5. 构建配置留空，直接创建
- 6. 绑定自定义域名 → 代理立即生效（默认 `webflowcn.webflow.io` 演示站点）
- 7. 要代理你自己的网站，在控制台 → 环境变量添加 `WEBFLOW_HOST` = 你的 `xxx.webflow.io`，然后重新部署
+ 6. 绑定自定义域名 → 代理立即生效（默认值仅用于演示）
+ 7. 在控制台添加 `ORIGIN_HOST` = 已绑定 Webflow 的专用自定义源站域名，然后重新部署；旧部署可继续使用 `WEBFLOW_HOST`
 8. （可选）在控制台开启 AI Bot Management 限制爬虫频率
 9. 在项目 → KV 存储中创建/绑定命名空间，运行时变量名填写 `EDGEFLOW_SNAPSHOT`
 10. 在环境变量中设置 `SNAPSHOT_REFRESH_SECRET`，供 SCF 或发布 webhook 调用刷新端点
@@ -96,8 +97,8 @@ KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑�
  
  1. 执行 `npm install && npm run build`
  2. 将整个 `edgeone/` 目录压缩上传到 EdgeOne Pages
- 3. 绑定域名即可使用（默认代理 `webflowcn.webflow.io`）
- 4. 要代理你自己的网站，在控制台添加环境变量 `WEBFLOW_HOST` = 你的 `xxx.webflow.io`
+ 3. 绑定域名即可使用
+ 4. 在控制台添加环境变量 `ORIGIN_HOST` = 已绑定 Webflow 的专用自定义源站域名
 
 ## 爬虫控制建议（EdgeOne 控制台配置）
 
@@ -140,10 +141,10 @@ npm run audit:live -- https://你的域名 --disable-browser-cache
 部署后访问 `https://你的域名/__proxy/health`，应看到：
 
 ```json
-{"ok":true,"runtime":"edgeone-pages","version":"2.6.0","originConfigured":true,"publicHostConfigured":true,"cacheApiAvailable":true,"snapshotStoreAvailable":true,"snapshotStoreType":"blob"}
+{"ok":true,"runtime":"edgeone-pages","version":"2.9.0","originConfigured":true,"originMode":"custom-domain","publicHostConfigured":true,"overseasRedirectConfigured":false,"cacheVersionConfigured":true,"cacheApiAvailable":true,"snapshotStoreAvailable":true,"snapshotStoreType":"blob"}
 ```
 
-- 用美国代理访问 → 应 301 重定向到 `webflowcn.webflow.io`
+- 用海外出口访问 → 默认仍由代理返回；仅设置 `OVERSEAS_REDIRECT_HOST` 后才 301 跳转
 - 直连访问（CN）→ 正常显示，资源走国内 CDN
 - 连续访问同一公开页面 → 首次 `X-EdgeFlow-Snapshot: MISS`，后续为 `FRESH`
 - 超过 `SNAPSHOT_TTL` → 仍立即返回 `STALE`，同时出现 `X-EdgeFlow-Refresh: BACKGROUND`

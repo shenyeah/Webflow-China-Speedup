@@ -18,7 +18,7 @@
      └─────────┘
           │
           ▼
-    xxx.webflow.io     ← Webflow 源站
+    origin.example.com ← 已绑定 Webflow 的专用自定义源站
  ```
 
  ## 请求处理流程
@@ -26,7 +26,7 @@
  1. 用户请求 `cdn.example.com/page`
  2. Edge Function 检查请求是否可缓存；中国大陆公开 GET/HEAD 查询 `caches.default`
  3. 命中 → 返回 `X-EdgeFlow-Cache: HIT`
- 4. 未命中 → 代理请求配置的 Webflow Staging 或正式自定义域名
+ 4. 未命中 → 代理请求配置的正式自定义源站；`*.webflow.io` staging 不作为生产支持路径
  5. HTML 响应 → 流式（CF）或全量（EO）改写：
     - 替换所有资源 URL 为代理地址
     - 移除 Google Fonts/Analytics 引用
@@ -47,7 +47,7 @@
 ### EdgeOne Pages
  - HTML: `caches.default` 显式缓存，默认 5 分钟
  - 指纹静态资源: 30 天；非指纹静态资源: 1 天
- - 缓存键: 完整 URL（含 query string）+ `Accept`
+ - 缓存键: 完整 URL（含 query string）+ `CACHE_VERSION`
  - 安全边界: 只缓存中国大陆公开 GET；HEAD 可读取已有 GET 缓存但不会用空响应填充
  - 可观测性: `X-EdgeFlow-Cache` 和 `X-EdgeFlow-Cache-Reason`
  - `edgeone.json` 仍提供平台静态缓存规则，但不能替代函数层 HIT/MISS 证据
@@ -74,11 +74,11 @@
 
 ---
 
-## 为什么要用 webflow.io 地址，而不是发布域名
+## 为什么使用专用自定义源站域名
 
-Webflow 自定义域名的 DNS 指向 `cdn.webflow.com`（Cloudflare IP），这个出口被 GFW 封锁，这就是你的网站在大陆打不开的根本原因。详见 [Webflow 官方文档](https://help.webflow.com/hc/en-us/articles/33961315914515-Connect-your-Cloudflare-domain-to-Webflow)。
+生产部署应给 Webflow 绑定一个只供代理回源的自定义域名，并将其配置为 `ORIGIN_HOST`。这样源站 Host、重定向、Canonical 和 Webflow 发布语义一致；`*.webflow.io` 只保留零配置演示和旧部署兼容，不作为生产支持路径。
 
-本方案通过  地址访问源站——这个域名走的是另一组 IP，目前在大陆仍可访问。代理负责从  拉取内容、改写被墙的资源、通过国内节点返回给用户。
+用户始终访问加速域名。代理从专用源站拉取内容、改写资源，并通过国内节点返回；海外也默认留在代理，只有显式设置 `OVERSEAS_REDIRECT_HOST` 才跳转。
 
 ---
 

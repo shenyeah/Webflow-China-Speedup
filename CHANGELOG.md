@@ -1,5 +1,14 @@
 # Changelog
 
+## [v2.9.0] — 2026-09-28
+
+- **feat**: EdgeOne 优先使用 `ORIGIN_HOST` 自定义源站域名，`WEBFLOW_HOST` 保持兼容。
+- **fix**: 未配置 `OVERSEAS_REDIRECT_HOST` 时海外流量继续走代理，不再默认暴露源站。
+- **cache**: 增加 `CACHE_VERSION` 发布隔离和 `ASSET_BLOB_TTL`，避免旧缓存污染新版本。
+- **warmup**: Sitemap 预热支持索引、公共域名、最多 200 条发现及 `offset` 分页。
+- **security**: 两条路线的资源代理改为域名边界匹配；修复 CF Worker CSS 回写遗漏。
+- **test**: 新增源站优先级、海外路由、缓存隔离、Blob 过期和 Sitemap 分页覆盖。
+
 ## [v2.8.0] — 2026-09-21
 
 ### 默认启用 Blob 持久缓存

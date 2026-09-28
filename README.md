@@ -44,10 +44,13 @@
 
 | 变量 | 值 |
 |---|---|
-| `WEBFLOW_HOST` | `xxx.webflow.io`（你的 Webflow 项目地址） |
+| `ORIGIN_HOST` | 已绑定 Webflow 的专用自定义源站域名（推荐） |
+| `WEBFLOW_HOST` | `ORIGIN_HOST` 的兼容别名 |
+| `OVERSEAS_REDIRECT_HOST` | 可选；仅配置后海外访问才跳转 |
+| `CACHE_VERSION` | 建议每次发布更新，隔离旧缓存 |
 | `NOINDEX_HOSTS` | 测试期间禁止收录的公开域名，多个域名用英文逗号分隔（可选） |
 
-代码已内置 `webflowcn.webflow.io` 作为默认值，**零配置即可运行**。
+代码保留 `webflowcn.webflow.io` 作为零配置演示。生产环境应设置专用自定义 `ORIGIN_HOST`，不要使用 `*.webflow.io` staging 域名。
 
 ### SEO 隔离与正式发布
 
@@ -87,7 +90,7 @@ NOINDEX_HOSTS=preview.example.com,www.example.com
 
 ## 当前版本与分支
 
-main：**v2.8.0**（2026-09-21），EdgeOne 默认启用 `edgeflow-snapshots` Blob 持久缓存；同时保留 v2.7.0 的可配置域名级 SEO 隔离。
+main：**v2.9.0**（2026-09-28），EdgeOne 支持正式自定义源站、发布缓存隔离、显式海外跳转和可分页 Sitemap 预热。
 
 - [版本更新](CHANGELOG.md)
 - [本地与 GitHub 分支索引](docs/BRANCHES.md)

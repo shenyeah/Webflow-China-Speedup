@@ -5,10 +5,10 @@
  ## 代理接口
 
  ### `GET /` — 代理 Webflow 主页
- 代理 `{WEBFLOW_HOST}.webflow.io/` 并改写 HTML。
+ 代理 `ORIGIN_HOST/` 并改写 HTML；生产环境应使用已绑定 Webflow 的专用自定义域名。
 
  ### `GET /{path}` — 代理任意页面/资源
- 代理 `{WEBFLOW_HOST}.webflow.io/{path}`，根据 `Content-Type` 决定是否改写：
+ 代理 `ORIGIN_HOST/{path}`，根据 `Content-Type` 决定是否改写：
  - `text/html` → HTML 改写（URL 替换 + Google 资源清理 + jQuery 镜像）
  - `text/css` → CSS 内部 URL 改写 + `@import` 过滤
  - `image/*`, `font/*`, `video/*` → 透传，缓存
@@ -28,4 +28,4 @@
 
  EdgeOne 部署时会注入自定义响应头：
  - `X-EdgeOne-Proxy: webflow-china-speedup-edgeone-v2`
- - `X-Proxy-Version: webflow-china-speedup/2.0`
+ - `X-Proxy-Version: webflow-china-speedup/2.9.0`

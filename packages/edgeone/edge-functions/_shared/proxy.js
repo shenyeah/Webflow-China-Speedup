@@ -1,8 +1,9 @@
 /**
- * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.8.0)
+ * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.9.0)
  *
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║  改动记录                                                     ║
+ * ║  [v2.9.0] 正式 Origin 域名、发布隔离与预热分页                 ║
  * ║  [v2.8.0] 默认启用 Blob 持久缓存                             ║
  * ║  [v2.7.0] 可配置域名级 SEO 隔离                              ║
  * ║  [v2.6.2] Site Acceleration 冷回源复用 Blob                  ║
@@ -21,7 +22,9 @@
 
 import { getStore as getBlobStore } from "@edgeone/pages-blob";
 
+const VERSION = "2.9.0";
 const DEFAULT_CONFIG = {
+  // 仅作零配置演示。生产环境应使用已绑定 Webflow 的专用自定义 Origin 域名。
   originHost: "webflowcn.webflow.io",
   blobStoreName: "edgeflow-snapshots",
   assetProxyPrefix: "/__eo_asset_v3__",
@@ -116,9 +119,12 @@ async function executeProxyRequest(request, env = {}, context = {}) {
     const body = JSON.stringify({
       ok: true,
       runtime: "edgeone-pages",
-      version: "2.8.0",
+      version: VERSION,
       originConfigured: Boolean(cfg.originHost),
+      originMode: classifyOriginMode(cfg.originHost),
       publicHostConfigured: Boolean(cfg.publicHost),
+      overseasRedirectConfigured: Boolean(cfg.overseasRedirectHost),
+      cacheVersionConfigured: cfg.cacheVersion !== "v1",
       siteAccelerationOverrideConfigured: Boolean(
         normalizeHost(env.SITE_ACCELERATION_PUBLIC_HOST || "") &&
         String(env.SITE_ACCELERATION_SECRET || "")
@@ -171,16 +177,16 @@ async function executeProxyRequest(request, env = {}, context = {}) {
   }
 
   // ════════════════════════════════════════════════════════════
-  // Geo 路由（v2.0 修复）：海外用户 301 → 源站直连
+  // Geo 路由：仅在显式配置 OVERSEAS_REDIRECT_HOST 时让海外用户跳转
   //
   // [修复] 改用 getClientCountry() 多 header fallback
   // [修复] 海外用户也返回 Vary header，防止边缘缓存混用
   // ════════════════════════════════════════════════════════════
   let country = "";
-  if (cfg.originHost) {
+  if (cfg.originHost && cfg.overseasRedirectHost) {
     country = getClientCountry(request, context);
     if (country && country !== "CN") {
-      const originUrl = `https://${cfg.originHost}${reqUrl.pathname}${reqUrl.search}`;
+      const originUrl = `https://${cfg.overseasRedirectHost}${reqUrl.pathname}${reqUrl.search}`;
       const resp = new Response(null, {
         status: 301,
         headers: {
@@ -192,10 +198,11 @@ async function executeProxyRequest(request, env = {}, context = {}) {
       return withCacheStatus(resp, "BYPASS", request.method, "geo-redirect");
     }
   }
+  if (!country) country = getClientCountry(request, context);
 
   if (!cfg.originHost) {
     return new Response(
-      "502 PROXY_CONFIG_ERROR: 环境变量 WEBFLOW_HOST 未配置。请在 EdgeOne Pages 控制台 → 设置 → 环境变量中添加，值为你的 Webflow 项目地址（如 xxx.webflow.io）。",
+      "502 PROXY_CONFIG_ERROR: 环境变量 ORIGIN_HOST 未配置。请设置为已绑定 Webflow 的专用自定义源站域名；WEBFLOW_HOST 仅作为兼容别名。",
       { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } }
     );
   }
@@ -274,7 +281,7 @@ async function executeProxyRequest(request, env = {}, context = {}) {
         assetBlobPlan.adapter.getMeta(assetBlobPlan.key),
         assetBlobPlan.adapter.getBody(assetBlobPlan.key)
       ]);
-      if (isValidAssetRecord(record)) {
+      if (isValidAssetRecord(record) && isFreshAssetRecord(record, assetBlobPlan.maxAge)) {
         if (body !== null) {
           const hit = responseFromAssetRecord(record, body, request.method);
           const response = withCacheBackend(
@@ -432,9 +439,12 @@ function normalizeSeoHostname(value) {
 }
 
 function resolveSiteConfig(env) {
+  const originHost = normalizeHost(env.ORIGIN_HOST || env.WEBFLOW_HOST || DEFAULT_CONFIG.originHost);
   return {
-    originHost: env.WEBFLOW_HOST || DEFAULT_CONFIG.originHost,
+    originHost,
     publicHost: normalizeHost(env.PUBLIC_HOST || ""),
+    overseasRedirectHost: normalizeHost(env.OVERSEAS_REDIRECT_HOST || ""),
+    cacheVersion: normalizeCacheVersion(env.CACHE_VERSION || "v1"),
     assetProxyPrefix: ensurePrefix(env.ASSET_PROXY_PREFIX || DEFAULT_CONFIG.assetProxyPrefix),
     proxyableHosts: DEFAULT_CONFIG.proxyableHosts,
     mirrorJquery: env.MIRROR_JQUERY || DEFAULT_CONFIG.mirrorJquery,
@@ -442,8 +452,17 @@ function resolveSiteConfig(env) {
     mirrorJsdMirror: env.MIRROR_JSD_MIRROR || DEFAULT_CONFIG.mirrorJsdMirror,
     htmlCacheTtl: parsePositiveInt(env.CACHE_TTL, 300),
     snapshotTtl: parsePositiveInt(env.SNAPSHOT_TTL, 900),
+    assetBlobTtl: parsePositiveInt(env.ASSET_BLOB_TTL, 86400),
     snapshotPaths: parseSnapshotPaths(env.SNAPSHOT_PATHS || "/")
   };
+}
+
+function classifyOriginMode(host) {
+  return host && host.toLowerCase().endsWith(".webflow.io") ? "staging-unsupported" : "custom-domain";
+}
+
+function normalizeCacheVersion(value) {
+  return String(value || "v1").trim().replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 64) || "v1";
 }
 
 function resolveRequestSiteConfig(request, env) {
@@ -519,7 +538,7 @@ async function createSnapshotPlan(request, reqUrl, target, cfg, country, env, op
     lookup: !options.force,
     canRefresh: method === "GET",
     store,
-    key: await makeSnapshotKey(normalizedUrl),
+    key: await makeSnapshotKey(normalizedUrl, cfg.cacheVersion),
     requestUrl: normalizedUrl,
     reason: "snapshot-miss"
   };
@@ -623,12 +642,12 @@ function normalizeSnapshotUrl(inputUrl) {
   return normalized;
 }
 
-async function makeSnapshotKey(url) {
-  return makeHashedKey("html", url);
+async function makeSnapshotKey(url, cacheVersion = "v1") {
+  return makeHashedKey("html", url, cacheVersion);
 }
 
-async function makeHashedKey(prefix, url) {
-  const input = new TextEncoder().encode(url.toString());
+async function makeHashedKey(prefix, url, cacheVersion = "v1") {
+  const input = new TextEncoder().encode(`${cacheVersion}\n${url.toString()}`);
   if (globalThis.crypto && globalThis.crypto.subtle) {
     const digest = await globalThis.crypto.subtle.digest("SHA-256", input);
     const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -661,7 +680,8 @@ async function createAssetBlobPlan(request, reqUrl, target, cfg, country, env = 
     lookup: true,
     store: method === "GET",
     adapter,
-    key: await makeHashedKey("asset", normalizeCacheUrl(reqUrl, kind)),
+    key: await makeHashedKey("asset", normalizeCacheUrl(reqUrl, kind), cfg.cacheVersion),
+    maxAge: kind === "fingerprinted-static" ? Number.POSITIVE_INFINITY : cfg.assetBlobTtl,
     reason: "blob-miss"
   };
 }
@@ -674,6 +694,11 @@ function isValidAssetRecord(record) {
     Number.isFinite(record.storedAt) &&
     Array.isArray(record.headers)
   );
+}
+
+function isFreshAssetRecord(record, maxAge) {
+  if (!Number.isFinite(maxAge)) return true;
+  return Date.now() - record.storedAt < maxAge * 1000;
 }
 
 function responseFromAssetRecord(record, body, method) {
@@ -790,12 +815,17 @@ async function handleSnapshotRefreshEndpoint(request, env, context, cfg, reqUrl)
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const requestedPaths = Array.isArray(payload.paths)
+  const limit = Math.min(parsePositiveInt(payload.limit, 20), 20);
+  const offset = Math.max(0, Number.parseInt(payload.offset, 10) || 0);
+  const discoveredPaths = Array.isArray(payload.paths)
     ? payload.paths
-    : await discoverSnapshotPaths(cfg, reqUrl, payload.limit);
+    : await discoverSnapshotPaths(cfg, reqUrl, offset + limit + 1);
+  const requestedPaths = Array.isArray(payload.paths)
+    ? discoveredPaths
+    : discoveredPaths.slice(offset, offset + limit);
   const paths = requestedPaths
     .filter((path) => typeof path === "string" && path.startsWith("/") && !path.startsWith("//"))
-    .slice(0, 20);
+    .slice(0, limit);
   const results = [];
   for (const path of paths) {
     try {
@@ -812,35 +842,54 @@ async function handleSnapshotRefreshEndpoint(request, env, context, cfg, reqUrl)
     }
   }
 
-  return new Response(JSON.stringify({ ok: results.every((item) => item.ok), results }), {
+  return new Response(JSON.stringify({
+    ok: results.every((item) => item.ok),
+    offset,
+    limit,
+    hasMore: !Array.isArray(payload.paths) && discoveredPaths.length > offset + paths.length,
+    results
+  }), {
     status: results.every((item) => item.ok) ? 200 : 502,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
   });
 }
 
 async function discoverSnapshotPaths(cfg, reqUrl, requestedLimit) {
-  const limit = Math.min(parsePositiveInt(requestedLimit, 20), 20);
+  const limit = Math.min(parsePositiveInt(requestedLimit, 20), 200);
   try {
-    const originSitemapUrl = `https://${cfg.originHost}/sitemap.xml`;
-    const response = await fetch(originSitemapUrl, { headers: { "accept-encoding": "identity" } });
-    if (!response.ok) throw new Error(`sitemap-status-${response.status}`);
-    const xml = await response.text();
     const paths = [];
-    const seen = new Set();
-    for (const match of xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
-      let candidate;
-      try {
-        candidate = new URL(decodeXmlEntities(match[1]), `https://${cfg.originHost}`);
-      } catch (_error) {
-        continue;
+    const seenPaths = new Set();
+    const seenSitemaps = new Set();
+    const allowedHosts = new Set([cfg.originHost, cfg.publicHost, reqUrl.host].filter(Boolean));
+    const queue = ["/sitemap.xml"];
+    while (queue.length && paths.length < limit && seenSitemaps.size < 20) {
+      const sitemapPath = queue.shift();
+      if (seenSitemaps.has(sitemapPath)) continue;
+      seenSitemaps.add(sitemapPath);
+      const response = await fetch(`https://${cfg.originHost}${sitemapPath}`, {
+        headers: { "accept-encoding": "identity", host: cfg.originHost }
+      });
+      if (!response.ok) continue;
+      const xml = await response.text();
+      for (const match of xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
+        let candidate;
+        try {
+          candidate = new URL(decodeXmlEntities(match[1]), `https://${cfg.originHost}`);
+        } catch (_error) {
+          continue;
+        }
+        if (!allowedHosts.has(candidate.host)) continue;
+        if (candidate.pathname.endsWith(".xml")) {
+          if (!seenSitemaps.has(candidate.pathname)) queue.push(candidate.pathname);
+          continue;
+        }
+        const path = `${candidate.pathname}${candidate.search}`;
+        if (!seenPaths.has(path)) {
+          seenPaths.add(path);
+          paths.push(path);
+        }
+        if (paths.length >= limit) break;
       }
-      if (candidate.host !== cfg.originHost || candidate.pathname.endsWith(".xml")) continue;
-      const path = `${candidate.pathname}${candidate.search}`;
-      if (!seen.has(path)) {
-        seen.add(path);
-        paths.push(path);
-      }
-      if (paths.length >= limit) break;
     }
     if (paths.length) return paths;
   } catch (_error) {}
@@ -899,10 +948,16 @@ function createCachePlan(request, reqUrl, target, cfg, country) {
     lookup: true,
     store: method === "GET",
     cache,
-    key: new Request(normalizeCacheUrl(reqUrl, base.kind).toString(), { method: "GET" }),
+    key: new Request(withCacheVersion(normalizeCacheUrl(reqUrl, base.kind), cfg.cacheVersion).toString(), { method: "GET" }),
     reason: method === "HEAD" ? "head-miss" : "cache-miss",
     htmlCacheTtl: cfg.htmlCacheTtl
   };
+}
+
+function withCacheVersion(inputUrl, cacheVersion) {
+  const url = new URL(inputUrl.toString());
+  url.searchParams.set("__edgeflow_cache_version", cacheVersion);
+  return url;
 }
 
 function hasFunctionalQuery(url) {
@@ -1393,7 +1448,7 @@ function resolveUpstreamTarget(reqUrl, cfg) {
   if (slashIndex <= 0) return null;
 
   const host = rest.slice(0, slashIndex).toLowerCase();
-  if (!cfg.proxyableHosts.some(h => host.endsWith(h))) return null;
+  if (!cfg.proxyableHosts.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) return null;
 
   const path = rest.slice(slashIndex);
   return {

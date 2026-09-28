@@ -276,20 +276,32 @@ test("POST and non-200 responses are never cached", async () => {
   assert.equal(fetchCount, 3);
 });
 
-test("foreign Geo redirect bypasses cache and never fetches upstream", async () => {
+test("foreign traffic stays on the proxy unless an overseas host is configured", async () => {
+  let fetchCount = 0;
   globalThis.fetch = async () => {
-    throw new Error("must not fetch");
+    fetchCount += 1;
+    return htmlResponse("<html><body>global edge</body></html>");
   };
 
-  const response = await handleProxyRequest(
+  const proxied = await handleProxyRequest(
     new Request("https://proxy.example.com/path?q=1"),
     { WEBFLOW_HOST: "origin.example.com" },
     createContext("US")
   );
+  assert.equal(proxied.status, 200);
+  assert.equal(proxied.headers.get("x-edgeflow-cache"), "BYPASS");
+  assert.equal(fetchCount, 1);
+
+  const response = await handleProxyRequest(
+    new Request("https://proxy.example.com/path?q=1"),
+    { WEBFLOW_HOST: "origin.example.com", OVERSEAS_REDIRECT_HOST: "www.example.com" },
+    createContext("US")
+  );
   assert.equal(response.status, 301);
-  assert.equal(response.headers.get("location"), "https://origin.example.com/path?q=1");
+  assert.equal(response.headers.get("location"), "https://www.example.com/path?q=1");
   assert.equal(response.headers.get("x-edgeflow-cache"), "BYPASS");
   assert.equal(response.headers.get("x-edgeflow-cache-reason"), "geo-redirect");
+  assert.equal(fetchCount, 1);
 });
 
 test("health response is minimal and contains no request or runtime dump", async () => {
@@ -303,8 +315,11 @@ test("health response is minimal and contains no request or runtime dump", async
   const body = await response.json();
   assert.deepEqual(Object.keys(body).sort(), [
     "cacheApiAvailable",
+    "cacheVersionConfigured",
     "ok",
     "originConfigured",
+    "originMode",
+    "overseasRedirectConfigured",
     "publicHostConfigured",
     "runtime",
     "siteAccelerationOverrideActive",
@@ -315,13 +330,33 @@ test("health response is minimal and contains no request or runtime dump", async
   ]);
   assert.equal(JSON.stringify(body).includes("203.0.113.8"), false);
   assert.equal(JSON.stringify(body).includes("private=value"), false);
-  assert.equal(body.version, "2.8.0");
+  assert.equal(body.version, "2.9.0");
+  assert.equal(body.originMode, "custom-domain");
+  assert.equal(body.overseasRedirectConfigured, false);
+  assert.equal(body.cacheVersionConfigured, false);
   assert.equal(body.cacheApiAvailable, true);
   assert.equal(body.snapshotStoreAvailable, false);
   assert.equal(body.snapshotStoreType, null);
   assert.equal(body.siteAccelerationOverrideConfigured, false);
   assert.equal(body.siteAccelerationOverrideActive, false);
   assert.equal(response.headers.get("x-edgeflow-cache"), "BYPASS");
+});
+
+test("ORIGIN_HOST is preferred and forwards Host plus the full query string", async () => {
+  let observedUrl = "";
+  let observedHost = "";
+  globalThis.fetch = async (url, init) => {
+    observedUrl = String(url);
+    observedHost = init.headers.get("host");
+    return htmlResponse();
+  };
+  await handleProxyRequest(
+    new Request("https://proxy.example.com/search?q=retail&page=2"),
+    { ORIGIN_HOST: "tectura.com", WEBFLOW_HOST: "legacy.example.com" },
+    createContext()
+  );
+  assert.equal(observedUrl, "https://tectura.com/search?q=retail&page=2");
+  assert.equal(observedHost, "tectura.com");
 });
 
 test("PUBLIC_HOST controls rewritten HTML, canonical URLs, and redirects", async () => {
@@ -956,6 +991,76 @@ test("Blob fallback persists rewritten HTML when KV and Cache API are unavailabl
   assert.equal(fetchCount, 1);
 });
 
+test("CACHE_VERSION isolates persistent HTML snapshots between releases", async () => {
+  globalThis.caches = undefined;
+  globalThis.EDGEFLOW_SNAPSHOT = new MemoryKv();
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return htmlResponse(`<html><body>release ${fetchCount}</body></html>`);
+  };
+
+  const request = new Request("https://proxy.example.com/");
+  const firstContext = createContext();
+  await handleProxyRequest(request, {
+    ORIGIN_HOST: "origin.example.com",
+    CACHE_VERSION: "release-a"
+  }, firstContext);
+  await settle(firstContext);
+
+  const second = await handleProxyRequest(request, {
+    ORIGIN_HOST: "origin.example.com",
+    CACHE_VERSION: "release-b"
+  }, createContext());
+  assert.equal(second.headers.get("x-edgeflow-cache"), "MISS");
+  assert.match(await second.text(), /release 2/);
+  assert.equal(fetchCount, 2);
+  assert.equal(globalThis.EDGEFLOW_SNAPSHOT.items.size, 2);
+});
+
+test("expired non-fingerprinted Blob assets are fetched again", async () => {
+  globalThis.caches = {
+    default: {
+      async match() { return undefined; },
+      async put() { throw new Error("cache forbidden"); }
+    }
+  };
+  const blob = new MemoryBlob();
+  globalThis.EDGEFLOW_BLOB_STORE = blob;
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return new Response(`body-${fetchCount}`, {
+      headers: { "content-type": "text/css" }
+    });
+  };
+
+  const request = new Request(
+    "https://proxy.example.com/__eo_asset_v3__/cdn.prod.website-files.com/css/site.css"
+  );
+  const firstContext = createContext();
+  const first = await handleProxyRequest(request, {
+    ORIGIN_HOST: "origin.example.com",
+    ASSET_BLOB_TTL: "1"
+  }, firstContext);
+  assert.equal(first.status, 200);
+  await settle(firstContext);
+
+  const metadataEntry = [...blob.items.entries()].find(([key]) => key.endsWith(".json"));
+  assert.ok(metadataEntry);
+  const [metadataKey, serialized] = metadataEntry;
+  const metadata = JSON.parse(serialized);
+  metadata.storedAt = Date.now() - 5000;
+  blob.items.set(metadataKey, JSON.stringify(metadata));
+
+  const second = await handleProxyRequest(request, {
+    ORIGIN_HOST: "origin.example.com",
+    ASSET_BLOB_TTL: "1"
+  }, createContext());
+  assert.equal(await second.text(), "body-2");
+  assert.equal(fetchCount, 2);
+});
+
 test("KV remains the preferred snapshot backend when Blob is also configured", async () => {
   globalThis.caches = undefined;
   const kv = new MemoryKv();
@@ -1199,4 +1304,69 @@ test("authenticated refresh endpoint discovers up to 20 HTML paths from the orig
   );
   assert.equal(hit.headers.get("x-edgeflow-snapshot"), "FRESH");
   assert.match(await hit.text(), /accelerated\.example\.com|\/about/);
+});
+
+test("refresh follows public-host sitemap indexes and supports pagination", async () => {
+  globalThis.caches = undefined;
+  globalThis.EDGEFLOW_SNAPSHOT = new MemoryKv();
+  const fetched = [];
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url);
+    fetched.push(parsed.pathname);
+    if (parsed.pathname === "/sitemap.xml") {
+      return new Response(
+        "<?xml version=\"1.0\"?><sitemapindex>" +
+          "<sitemap><loc>https://accelerated.example.com/pages.xml</loc></sitemap>" +
+          "</sitemapindex>",
+        { headers: { "content-type": "application/xml" } }
+      );
+    }
+    if (parsed.pathname === "/pages.xml") {
+      const urls = Array.from({ length: 25 }, (_, index) =>
+        `<url><loc>https://accelerated.example.com/page-${index + 1}</loc></url>`
+      ).join("");
+      return new Response(`<?xml version="1.0"?><urlset>${urls}</urlset>`, {
+        headers: { "content-type": "application/xml" }
+      });
+    }
+    return htmlResponse(`<html><body>${parsed.pathname}</body></html>`);
+  };
+
+  const response = await handleProxyRequest(
+    new Request("https://makers-origin.example/__proxy/refresh", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-secret",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ offset: 20, limit: 20 })
+    }),
+    {
+      ORIGIN_HOST: "origin.example.com",
+      PUBLIC_HOST: "accelerated.example.com",
+      SNAPSHOT_REFRESH_SECRET: "test-secret"
+    },
+    createContext()
+  );
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.offset, 20);
+  assert.equal(result.limit, 20);
+  assert.equal(result.hasMore, false);
+  assert.deepEqual(result.results.map((item) => item.path), [
+    "/page-21",
+    "/page-22",
+    "/page-23",
+    "/page-24",
+    "/page-25"
+  ]);
+  assert.deepEqual(fetched, [
+    "/sitemap.xml",
+    "/pages.xml",
+    "/page-21",
+    "/page-22",
+    "/page-23",
+    "/page-24",
+    "/page-25"
+  ]);
 });

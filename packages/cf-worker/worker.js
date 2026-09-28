@@ -22,6 +22,7 @@
 // Build stamp — set by build.mjs; falls back gracefully when deployed without build
 const BUILD_VERSION = "__BUILD_COMMIT__";
 const BUILD_DEPLOY_TIME = "__BUILD_DEPLOY_TIME__";
+const ASSET_HOST_SUFFIXES = ["website-files.com", "uploads-ssl.webflow.com"];
 
 export default {
   async fetch(req, env, ctx) {
@@ -84,6 +85,9 @@ async function handleRequest(req, env, ctx) {
       if (!match) return new Response("Invalid CDN Path", { status: 400 });
 
       const upstreamHost = match[1];
+      if (!isAllowedAssetHost(upstreamHost)) {
+        return new Response("Invalid CDN Host", { status: 400 });
+      }
       const restPath = match[2];
       const upstreamURL = `https://${upstreamHost}/${restPath}${url.search}`;
 
@@ -162,10 +166,7 @@ async function handleRequest(req, env, ctx) {
             const isCss = contentType?.includes("text/css") || restPath.endsWith(".css");
             if (isCss) {
               let cssText = await upstreamResp.text();
-              cssText = cssText.replace(
-                /https:\/\/[\w.-]*(?:website-files\.com|uploads-ssl\.webflow\.com)/g,
-                (_, host) => `/_cdn/${host}`
-              );
+              cssText = rewriteCssAssetUrls(cssText);
               newHeaders.set("content-type", "text/css; charset=UTF-8");
               newHeaders.set("x-cache", "MISS-R2-FETCHED-CSS-REWRITTEN");
               ctx.waitUntil(
@@ -341,13 +342,7 @@ async function handleRequest(req, env, ctx) {
       );
 
       // 重写资产域名到 /_cdn/ 路径（含 Webflow jQuery CloudFront 域名）
-      cssText = cssText.replace(
-        /https:\/\/[\w.-]*(?:website-files\.com|uploads-ssl\.webflow\.com)/g,
-        (match) => {
-          const host = match.replace("https://", "");
-          return `/_cdn/${host}`;
-        }
-      );
+      cssText = rewriteCssAssetUrls(cssText);
 
       return new Response(cssText, {
         headers: {
@@ -415,8 +410,7 @@ function rewriteAssetURL(u) {
     }
     const parsed = new URL(u, "https://dummy.base");
     const host = parsed.hostname;
-    const webflowSuffixes = ["website-files.com", "uploads-ssl.webflow.com"];
-    const isWebflowCDN = webflowSuffixes.some(s => host.endsWith(s));
+    const isWebflowCDN = isAllowedAssetHost(host);
     if (isWebflowCDN) {
       return `/_cdn/${host}${parsed.pathname}${parsed.search}`;
     }
@@ -424,4 +418,16 @@ function rewriteAssetURL(u) {
   } catch {
     return u;
   }
+}
+
+export function isAllowedAssetHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/\.$/, "");
+  return ASSET_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+export function rewriteCssAssetUrls(input) {
+  return String(input).replace(
+    /https:\/\/([\w.-]*(?:website-files\.com|uploads-ssl\.webflow\.com))/gi,
+    (match, host) => isAllowedAssetHost(host) ? `/_cdn/${host}` : match
+  );
 }

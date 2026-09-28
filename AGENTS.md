@@ -5,7 +5,7 @@
  > Webflow 网站在中国大陆的被 GFW 封控，无法访问。本仓库提供反向代理解决方案，两条路线可选，5 分钟恢复访问。
 
  **仓库**: `shenyeah/webflow-china-speedup`
- **最新 main 版本**: v2.8.0（2026-09-21；分支关系见 `docs/BRANCHES.md`，代码发布与客户部署分别记录）
+ **最新 main 版本**: v2.9.0（2026-09-28；分支关系见 `docs/BRANCHES.md`，代码发布与客户部署分别记录）
  **自动部署**: [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker) [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup)
 
  ---
@@ -68,7 +68,7 @@
 
  两种代理核心逻辑相似，均包含以下 URL 重写：
 
- 1. **Webflow 源站代理**: `https://{WEBFLOW_HOST}.webflow.io` → 改写 HTML 中的资源链接
+ 1. **Webflow 源站代理**: `https://{ORIGIN_HOST}` → 改写 HTML 中的资源链接；`WEBFLOW_HOST` 仅作兼容别名
  2. **Google 资源拦截**: 移除 preconnect/dns-prefetch/GTM/GA/Fonts
  3. **CSS @import 过滤**: 删除 Google Fonts 引用
  4. **jQuery 替换**: CloudFront → 国内 CDN（cdnjs）
@@ -84,7 +84,11 @@
 所有环境变量均有默认值，部署后无需配置即可运行。
 
  ### 通用
- - `WEBFLOW_HOST`: 你的 Webflow 站点标识（如 `webflowcn`），默认值 `webflowcn.webflow.io`
+ - `ORIGIN_HOST`: 已绑定 Webflow 的专用自定义源站域名（推荐）；不要使用 `*.webflow.io` staging 域名
+ - `WEBFLOW_HOST`: `ORIGIN_HOST` 的兼容别名；默认演示值仍为 `webflowcn.webflow.io`
+ - `OVERSEAS_REDIRECT_HOST`: 可选；配置后海外访问才跳转，默认所有地区继续走代理
+ - `CACHE_VERSION`: 发布缓存命名空间，建议每次发布更新
+ - `ASSET_BLOB_TTL`: 无内容指纹静态资源在 Blob 中的有效期，默认 86400 秒
  - `CACHE_TTL`: 边缘缓存 TTL（秒，默认 300）
 - `SNAPSHOT_BLOB_STORE`: Blob Store 名称，默认 `edgeflow-snapshots`；KV 不可用时保存 HTML 快照，并在 Makers Cache API 被禁止时保存 8 MB 以内的静态资源；设置 `off` 可关闭
 - `PUBLIC_HOST`: Site Acceleration 回源时使用的对外域名；保证 HTML、Canonical、资源和跳转统一使用外部域名
@@ -107,7 +111,7 @@
  - **R2 永久缓存**: 静态资源首次回源后永久存储在 R2，后续直接从 R2 读取
  - **EdgeOne 边缘函数打包**: `build.mjs` 使用 esbuild 将入口、`proxy.js` 和 Makers Blob SDK打成两个独立 ESM 单文件（`index.js` + `[[default]].js`）
  - **版本隔离**: 两路线独立版本控制，`package.json` 各自管理
-- **零配置部署**: 两路线均内置默认值 `webflowcn.webflow.io`，点 badge 部署后即可绑定域名使用
+- **零配置演示**: 两路线保留 `webflowcn.webflow.io` 默认值；生产部署应配置专用自定义 `ORIGIN_HOST`
 
  ## 谁在维护
 

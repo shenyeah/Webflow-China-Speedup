@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { applySeoIsolation } from "../worker.js";
+import { applySeoIsolation, isAllowedAssetHost, rewriteCssAssetUrls } from "../worker.js";
 
 function headerFor(hostname, configuredHosts) {
   const response = applySeoIsolation(
@@ -31,4 +31,20 @@ test("multiple hosts are case-insensitive and whitespace-safe", () => {
 test("empty configuration preserves existing behavior", () => {
   assert.equal(headerFor("preview.example.com", ""), null);
   assert.equal(headerFor("preview.example.com", undefined), null);
+});
+
+test("asset host allowlist requires an exact host or dot boundary", () => {
+  assert.equal(isAllowedAssetHost("cdn.prod.website-files.com"), true);
+  assert.equal(isAllowedAssetHost("uploads-ssl.webflow.com"), true);
+  assert.equal(isAllowedAssetHost("evilwebsite-files.com"), false);
+  assert.equal(isAllowedAssetHost("website-files.com.evil.example"), false);
+});
+
+test("CSS rewriting proxies allowed Webflow assets without touching lookalike hosts", () => {
+  const rewritten = rewriteCssAssetUrls(
+    ".a{background:url(https://cdn.prod.website-files.com/a.png)}" +
+      ".b{background:url(https://evilwebsite-files.com/b.png)}"
+  );
+  assert.match(rewritten, /\/_cdn\/cdn\.prod\.website-files\.com\/a\.png/);
+  assert.match(rewritten, /https:\/\/evilwebsite-files\.com\/b\.png/);
 });
