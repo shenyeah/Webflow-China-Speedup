@@ -1,7 +1,7 @@
  # Current State
 
  **版本**: main 为 v2.9.0（2026-09-28；核心提交 `5a070d3`）
- **状态**: v2.9.0 已推送 main；EdgeOne 50 项、CF Worker 6 项测试及双路线构建通过。Makers 隔离项目 `tectura-v26-custom` 已切换 `tectura.com` 源站并完成 Production 部署 `dpsxpyg4m734`。当前本地网络对 EdgeOne 域名在 TLS 后截断 HTTP 响应，运行时 HTTP 验收尚未确认；未改动 `tectura-cn` 正式项目。
+ **状态**: v2.9.0 已推送 main；EdgeOne 50 项、CF Worker 6 项测试及双路线构建通过。Makers 隔离项目 `tectura-v26-custom` 已切换 `tectura.com` 源站并完成 Production 部署 `dpbfalt01w9b`。线上确认 health 200 / v2.9.0、`x-proxy-upstream: tectura.com`、HTML `FRESH/HIT/blob` 和 `noindex`；未改动 `tectura-cn` 正式项目。
  **最后更新**: 2026-09-28
  
  ## 已完成的里程碑
@@ -16,6 +16,7 @@
  - [x] v2.5（已纳入 main）: 可选 Blob 备用快照、KV 优先级、esbuild 依赖打包、门禁 Cookie 隔离和后端诊断头
  - [x] v2.6（已纳入 main）: `PUBLIC_HOST`、Cache API 写入结果、资源分类、Sitemap 批量预热和静态资源重复审计
  - [x] v2.9（已纳入 main）: 正式自定义 `ORIGIN_HOST`、显式海外跳转、`CACHE_VERSION` 发布隔离、无指纹 Blob 过期和 Sitemap 分页预热
+ - [x] v2.9 Makers 实验: CLI 必须上传 `packages/edgeone` 项目目录，不能直接上传其 `.edgeone` 构建产物目录；`CACHE_VERSION=v2.9.0-tectura` 隔离旧 BUNKR 快照
  - [x] v2.6 腾讯云测试架构: custom/staging/EO 三条隔离线路、DNSPod CNAME、免费证书和可审计缓存规则；EO 安全复用 staging Makers 回源
  - [x] 匿名浏览器审计: 多轮清空 Cookie/本地缓存，并分别支持直连、指定代理和硬刷新口径
  

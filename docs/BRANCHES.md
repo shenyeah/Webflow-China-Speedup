@@ -3,7 +3,7 @@
 ## 当前发布入口
 
 - `main`：v2.9.0 正式入口；核心代码提交 `5a070d3`。
-- `tectura-v26-custom`：Makers 隔离实验项目，Production 部署 `dpsxpyg4m734`，源站为 `tectura.com`。
+- `tectura-v26-custom`：Makers 隔离实验项目，Production 部署 `dpbfalt01w9b`，源站为 `tectura.com`；health、源站头和 Blob 命中已线上确认。
 - `tectura-cn`：客户正式项目，本轮未修改；不能用实验项目部署状态代替其生产验收。
 - 发布后 EdgeOne 50 项、CF Worker 6 项测试和双路线构建通过。
 

@@ -96,7 +96,7 @@ KV 命名空间需要在 EdgeOne Makers 控制台创建并绑定到项目，绑�
  ### 方式二：直接上传文件夹
  
  1. 执行 `npm install && npm run build`
- 2. 将整个 `edgeone/` 目录压缩上传到 EdgeOne Pages
+ 2. 将整个 `packages/edgeone/` 项目目录上传到 EdgeOne Pages；CLI 使用 `edgeone makers deploy packages/edgeone`，不要把 `.edgeone/` 构建产物目录当作项目根目录上传
  3. 绑定域名即可使用
  4. 在控制台添加环境变量 `ORIGIN_HOST` = 已绑定 Webflow 的专用自定义源站域名
 
