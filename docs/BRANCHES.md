@@ -1,4 +1,11 @@
-# 分支索引（2026-09-08）
+# 分支索引（2026-09-28）
+
+## 当前发布入口
+
+- `main`：v2.9.0 正式入口；核心代码提交 `5a070d3`。
+- `tectura-v26-custom`：Makers 隔离实验项目，Production 部署 `dpsxpyg4m734`，源站为 `tectura.com`。
+- `tectura-cn`：客户正式项目，本轮未修改；不能用实验项目部署状态代替其生产验收。
+- 发布后 EdgeOne 50 项、CF Worker 6 项测试和双路线构建通过。
 
 发布前已执行 git fetch 并通过 GitHub API 核对：本地 12 个分支，GitHub 10 个分支；没有打开中的 PR。下表为整理前快照。本次保留所有历史分支，不删除备份。
 
