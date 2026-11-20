@@ -1,8 +1,9 @@
 /**
- * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.9.0)
+ * Webflow China Speedup — EdgeOne Makers 代理核心逻辑 (v2.10.2)
  *
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║  改动记录                                                     ║
+ * ║  [v2.10.0] 海外资源直连，保留公开域名改写                     ║
  * ║  [v2.9.0] 正式 Origin 域名、发布隔离与预热分页                 ║
  * ║  [v2.8.0] 默认启用 Blob 持久缓存                             ║
  * ║  [v2.7.0] 可配置域名级 SEO 隔离                              ║
@@ -22,7 +23,10 @@
 
 import { getStore as getBlobStore } from "@edgeone/pages-blob";
 
-const VERSION = "2.9.0";
+const VERSION = "2.10.2";
+const HTML_REWRITE_VERSION = "2.10.2";
+// Webflow Google Tag Gateway uses a first-party path, not a Google hostname.
+const WEBFLOW_GOOGLE_GATEWAY_PATH_RE = /^\/9i1h7htkfq16[^/]*\//;
 const DEFAULT_CONFIG = {
   // 仅作零配置演示。生产环境应使用已绑定 Webflow 的专用自定义 Origin 域名。
   originHost: "webflowcn.webflow.io",
@@ -124,6 +128,7 @@ async function executeProxyRequest(request, env = {}, context = {}) {
       originMode: classifyOriginMode(cfg.originHost),
       publicHostConfigured: Boolean(cfg.publicHost),
       overseasRedirectConfigured: Boolean(cfg.overseasRedirectHost),
+      overseasMode: cfg.overseasMode,
       cacheVersionConfigured: cfg.cacheVersion !== "v1",
       siteAccelerationOverrideConfigured: Boolean(
         normalizeHost(env.SITE_ACCELERATION_PUBLIC_HOST || "") &&
@@ -199,6 +204,18 @@ async function executeProxyRequest(request, env = {}, context = {}) {
     }
   }
   if (!country) country = getClientCountry(request, context);
+
+  // Old tabs may still request a gateway URL from pre-deployment HTML.
+  // Stop those requests before upstream fetches or cache lookups, in CN only.
+  if (country === "CN" && WEBFLOW_GOOGLE_GATEWAY_PATH_RE.test(reqUrl.pathname)) {
+    return withCacheStatus(new Response(null, {
+      status: 204,
+      headers: {
+        "cache-control": "no-store",
+        "x-edgeflow-google-tracking": "disabled-cn"
+      }
+    }), "BYPASS", request.method, "google-tracking-disabled");
+  }
 
   if (!cfg.originHost) {
     return new Response(
@@ -323,7 +340,7 @@ async function executeProxyRequest(request, env = {}, context = {}) {
   const originMs = elapsedMs(originStartedAt);
 
   const rewriteStartedAt = monotonicNow();
-  const rewritten = await rewriteResponse(upstreamResp, publicUrl, request.method, target, cfg);
+  const rewritten = await rewriteResponse(upstreamResp, publicUrl, request.method, target, cfg, country);
   const rewriteMs = elapsedMs(rewriteStartedAt);
   const storeDecision = canStoreResponse(rewritten, cachePlan);
   const snapshotDecision = canStoreSnapshot(rewritten, snapshotPlan);
@@ -444,6 +461,7 @@ function resolveSiteConfig(env) {
     originHost,
     publicHost: normalizeHost(env.PUBLIC_HOST || ""),
     overseasRedirectHost: normalizeHost(env.OVERSEAS_REDIRECT_HOST || ""),
+    overseasMode: normalizeOverseasMode(env.OVERSEAS_MODE),
     cacheVersion: normalizeCacheVersion(env.CACHE_VERSION || "v1"),
     assetProxyPrefix: ensurePrefix(env.ASSET_PROXY_PREFIX || DEFAULT_CONFIG.assetProxyPrefix),
     proxyableHosts: DEFAULT_CONFIG.proxyableHosts,
@@ -463,6 +481,10 @@ function classifyOriginMode(host) {
 
 function normalizeCacheVersion(value) {
   return String(value || "v1").trim().replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 64) || "v1";
+}
+
+function normalizeOverseasMode(value) {
+  return String(value || "").trim().toLowerCase() === "direct-assets" ? "direct-assets" : "proxy";
 }
 
 function resolveRequestSiteConfig(request, env) {
@@ -643,7 +665,7 @@ function normalizeSnapshotUrl(inputUrl) {
 }
 
 async function makeSnapshotKey(url, cacheVersion = "v1") {
-  return makeHashedKey("html", url, cacheVersion);
+  return makeHashedKey("html", url, `${cacheVersion}:${HTML_REWRITE_VERSION}`);
 }
 
 async function makeHashedKey(prefix, url, cacheVersion = "v1") {
@@ -788,7 +810,7 @@ function refreshSnapshot(snapshotPlan, request, target, cfg) {
       headers: upstreamHeaders,
       redirect: "manual"
     });
-    const rewritten = await rewriteResponse(upstreamResp, snapshotPlan.requestUrl, "GET", target, cfg);
+    const rewritten = await rewriteResponse(upstreamResp, snapshotPlan.requestUrl, "GET", target, cfg, "CN");
     const decision = canStoreSnapshot(rewritten, snapshotPlan);
     if (!decision.store) throw new Error(decision.reason);
     await storeSnapshot(snapshotPlan, rewritten);
@@ -948,7 +970,8 @@ function createCachePlan(request, reqUrl, target, cfg, country) {
     lookup: true,
     store: method === "GET",
     cache,
-    key: new Request(withCacheVersion(normalizeCacheUrl(reqUrl, base.kind), cfg.cacheVersion).toString(), { method: "GET" }),
+    key: new Request(withCacheVersion(normalizeCacheUrl(reqUrl, base.kind),
+      base.kind === "html" ? `${cfg.cacheVersion}.html-${HTML_REWRITE_VERSION}` : cfg.cacheVersion).toString(), { method: "GET" }),
     reason: method === "HEAD" ? "head-miss" : "cache-miss",
     htmlCacheTtl: cfg.htmlCacheTtl
   };
@@ -1149,7 +1172,7 @@ function canHaveBody(method) {
   return method !== "GET" && method !== "HEAD";
 }
 
-async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
+async function rewriteResponse(originResp, requestUrl, method, target, cfg, country) {
   const headers = new Headers(originResp.headers);
   const upstreamContentEncoding = originResp.headers.get("content-encoding");
   const isCompressed = upstreamContentEncoding && upstreamContentEncoding !== "identity";
@@ -1158,9 +1181,10 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
   const isCss = contentType.includes("text/css");
   const shouldRewriteBodyText = isHtml || isCss;
   const isStatic = STATIC_EXT_RE.test(target.sourcePathname);
+  const overseasDirectAssets = cfg.overseasMode === "direct-assets" && Boolean(country) && country !== "CN";
 
-  rewriteLocationHeader(headers, requestUrl, cfg);
-  rewriteLinkHeader(headers, requestUrl, cfg);
+  rewriteLocationHeader(headers, requestUrl, cfg, overseasDirectAssets);
+  rewriteLinkHeader(headers, requestUrl, cfg, overseasDirectAssets);
   dropUnsafeUpstreamHeaders(headers, requestUrl.host);
   if (shouldRewriteBodyText || isCompressed) dropChangedRepresentationHeaders(headers);
 
@@ -1176,6 +1200,7 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
     normalizeTransferHeaders(headers);
     headers.set("x-proxy-cache-policy", isStatic ? "static" : "dynamic");
     headers.set("x-proxy-upstream", target.upstreamHost);
+    headers.set("x-edgeflow-content-mode", overseasDirectAssets ? "overseas-direct-assets" : "china-optimized");
     if (isCompressed) {
       const decompressed = await originResp.arrayBuffer();
       return new Response(decompressed, {
@@ -1190,14 +1215,16 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
   }
 
   let text = await originResp.text();
-  text = rewriteDomainTokens(text, requestUrl, cfg);
+  text = rewriteDomainTokens(text, requestUrl, cfg, !overseasDirectAssets);
 
   if (isHtml) {
     text = stripWebflowBranding(text);
     text = injectOptimizations(text);
-    text = applyChinaSpeedRewrites(text, requestUrl, cfg);
-    text = stripCssIntegrity(text);
-  } else if (isCss) {
+    if (!overseasDirectAssets) {
+      text = applyChinaSpeedRewrites(text, requestUrl, cfg, !country || country === "CN");
+      text = stripCssIntegrity(text);
+    }
+  } else if (isCss && !overseasDirectAssets) {
     text = rewriteCssFonts(text, requestUrl, cfg);
   }
 
@@ -1206,6 +1233,7 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
   headers.delete("vary");
   headers.set("x-proxy-cache-policy", isStatic ? "static" : "dynamic");
   headers.set("x-proxy-upstream", target.upstreamHost);
+  headers.set("x-edgeflow-content-mode", overseasDirectAssets ? "overseas-direct-assets" : "china-optimized");
 
   return new Response(text, {
     status: originResp.status,
@@ -1213,16 +1241,20 @@ async function rewriteResponse(originResp, requestUrl, method, target, cfg) {
   });
 }
 
-function rewriteLocationHeader(headers, requestUrl, cfg) {
+function rewriteLocationHeader(headers, requestUrl, cfg, overseasDirectAssets = false) {
   const location = headers.get("location");
   if (!location) return;
-  headers.set("location", rewriteDomainTokens(location, requestUrl, cfg));
+  headers.set("location", rewriteDomainTokens(location, requestUrl, cfg, !overseasDirectAssets));
 }
 
-function rewriteLinkHeader(headers, requestUrl, cfg) {
+function rewriteLinkHeader(headers, requestUrl, cfg, overseasDirectAssets = false) {
   const link = headers.get("link");
   if (!link) return;
-  const rewritten = rewriteChinaCdnTokens(rewriteDomainTokens(link, requestUrl, cfg), cfg);
+  if (overseasDirectAssets) {
+    headers.set("link", rewriteDomainTokens(link, requestUrl, cfg, false));
+    return;
+  }
+  const rewritten = rewriteChinaCdnTokens(rewriteDomainTokens(link, requestUrl, cfg, true), cfg);
   const normalized = rewritten
     .split(/,(?=\s*<)/)
     .map((entry) => {
@@ -1308,13 +1340,15 @@ function setSecurityHeaders(headers) {
   headers.set("x-dns-prefetch-control", "on");
 }
 
-function rewriteDomainTokens(input, requestUrl, cfg) {
+function rewriteDomainTokens(input, requestUrl, cfg, proxyAssets = true) {
   const reqHost = requestUrl.host;
   const reqOrigin = `${requestUrl.protocol}//${reqHost}`;
   let output = input
     .replace(new RegExp(`https://${escapeRegExp(cfg.originHost)}`, "gi"), reqOrigin)
     .replace(new RegExp(`//${escapeRegExp(cfg.originHost)}`, "gi"), `//${reqHost}`)
     .replace(new RegExp(escapeRegExp(cfg.originHost), "gi"), reqHost);
+
+  if (!proxyAssets) return output;
 
   cfg.proxyableHosts.forEach((host) => {
     const escapedHost = escapeRegExp(host);
@@ -1342,7 +1376,55 @@ function injectOptimizations(input) {
   return output;
 }
 
-function applyChinaSpeedRewrites(input, requestUrl, cfg) {
+function trackingTagAttribute(tag, name) {
+  const match = tag.match(new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
+  return match ? (match[1] ?? match[2] ?? match[3]).replace(/&amp;/gi, "&") : "";
+}
+
+function isGoogleTrackingUrl(value, requestUrl, gatewayRoots = []) {
+  if (!value) return false;
+  let url;
+  try { url = new URL(value, requestUrl); } catch { return false; }
+  const host = url.hostname.toLowerCase();
+  const trackingHosts = ["googletagmanager.com", "google-analytics.com", "analytics.google.com",
+    "googleadservices.com", "googlesyndication.com", "doubleclick.net"];
+  if (trackingHosts.some((domain) => host === domain || host.endsWith(`.${domain}`))) return true;
+  if ((host === "google.com" || host.endsWith(".google.com")) &&
+      /^\/(?:pagead\/|ccm\/|g\/collect(?:\/|$)|ads\/ga-audiences)/.test(url.pathname)) return true;
+  return url.origin === requestUrl.origin &&
+    (WEBFLOW_GOOGLE_GATEWAY_PATH_RE.test(url.pathname) || gatewayRoots.some((root) => url.pathname.startsWith(root)));
+}
+
+function stripGoogleTracking(input, requestUrl) {
+  // Discover a changed gateway path only when directly paired with Webflow's
+  // native bootstrap. Never classify arbitrary same-origin async scripts.
+  const gatewayRoots = [];
+  const pairedBootstrap = /<script\b[^>]*>(?:(?!<\/script>)[\s\S])*?google_tags_first_party(?:(?!<\/script>)[\s\S])*?<\/script>\s*(<script\b[^>]*\bsrc\s*=[^>]*>[\s\S]*?<\/script>)/gi;
+  for (const match of input.matchAll(pairedBootstrap)) {
+    try {
+      const url = new URL(trackingTagAttribute(match[1], "src"), requestUrl);
+      if (url.origin === requestUrl.origin && url.pathname.split("/").filter(Boolean).length >= 2) {
+        gatewayRoots.push(`${url.pathname.slice(0, url.pathname.lastIndexOf("/") + 1)}`);
+      }
+    } catch { /* Ignore malformed markup; do not guess another service's URL. */ }
+  }
+
+  let output = input.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, (tag) => {
+    const src = trackingTagAttribute(tag.slice(0, tag.indexOf(">") + 1), "src");
+    if (src) return isGoogleTrackingUrl(src, requestUrl, gatewayRoots) ? "" : tag;
+    // Consent UI may use gtag only as a local authorization queue. Preserve it
+    // and the Meta bridge; no Google loader remains to consume that queue.
+    if (isConsentBridgeScript(tag)) return tag;
+    return /(?:google_tags_first_party|dataLayer|gtag\s*\(|GoogleAnalyticsObject|googletagmanager\.com)/i.test(tag) ? "" : tag;
+  });
+  output = output.replace(/<(?:link|img|iframe)\b[^>]*>(?:\s*<\/iframe>)?/gi, (tag) => {
+    const value = trackingTagAttribute(tag, /^<link\b/i.test(tag) ? "href" : "src");
+    return isGoogleTrackingUrl(value, requestUrl, gatewayRoots) ? "" : tag;
+  });
+  return output;
+}
+
+function applyChinaSpeedRewrites(input, requestUrl, cfg, disableGoogleTracking = true) {
   let output = rewriteChinaCdnTokens(input, cfg);
   const reqHost = requestUrl.host;
   const reqOrigin = `${requestUrl.protocol}//${reqHost}`;
@@ -1357,12 +1439,7 @@ function applyChinaSpeedRewrites(input, requestUrl, cfg) {
     ""
   );
 
-  output = output.replace(/<script[^>]*src=["'][^"']*(?:googletagmanager|google-analytics)\.com[^"']*["'][^>]*>\s*<\/script>/gi, "");
-  output = output.replace(/<noscript>\s*<iframe[^>]*googletagmanager\.com[^>]*><\/iframe>\s*<\/noscript>/gi, "");
-  output = output.replace(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/gi, (match) => {
-    if (/(?:dataLayer|gtag\(|GoogleAnalyticsObject)/i.test(match)) return "";
-    return match;
-  });
+  if (disableGoogleTracking) output = stripGoogleTracking(output, requestUrl);
 
   output = output.replace(
     /https?:\/\/ajax\.googleapis\.com\/ajax\/libs\/webfont\/[\d.]+\/webfont\.js/gi,
@@ -1403,6 +1480,10 @@ function applyChinaSpeedRewrites(input, requestUrl, cfg) {
   );
 
   return output;
+}
+
+function isConsentBridgeScript(script) {
+  return /(?:cw[:_-]|consentMode|setConsent|cwOptionsPanel|consent[-_ ]updated|ad_storage|ad_user_data|analytics_storage)/i.test(script);
 }
 
 function rewriteChinaCdnTokens(input, cfg) {
@@ -1498,7 +1579,7 @@ async function generateSitemap(cfg, reqUrl) {
     if (resp.ok) {
       const text = await resp.text();
       if (text.includes("<urlset") || text.includes("<sitemapindex")) {
-        return rewriteSitemapLocations(rewriteDomainTokens(text, reqUrl, cfg), reqOrigin);
+        return rewriteSitemapLocations(rewriteDomainTokens(text, reqUrl, cfg, false), reqOrigin);
       }
     }
   } catch (_e) { /* origin has no sitemap, continue */ }

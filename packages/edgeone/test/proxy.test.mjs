@@ -319,6 +319,7 @@ test("health response is minimal and contains no request or runtime dump", async
     "ok",
     "originConfigured",
     "originMode",
+    "overseasMode",
     "overseasRedirectConfigured",
     "publicHostConfigured",
     "runtime",
@@ -330,9 +331,10 @@ test("health response is minimal and contains no request or runtime dump", async
   ]);
   assert.equal(JSON.stringify(body).includes("203.0.113.8"), false);
   assert.equal(JSON.stringify(body).includes("private=value"), false);
-  assert.equal(body.version, "2.9.0");
+  assert.equal(body.version, "2.10.2");
   assert.equal(body.originMode, "custom-domain");
   assert.equal(body.overseasRedirectConfigured, false);
+  assert.equal(body.overseasMode, "proxy");
   assert.equal(body.cacheVersionConfigured, false);
   assert.equal(body.cacheApiAvailable, true);
   assert.equal(body.snapshotStoreAvailable, false);
@@ -373,6 +375,100 @@ test("PUBLIC_HOST controls rewritten HTML, canonical URLs, and redirects", async
   assert.match(body, /https:\/\/public\.example\.com\/about/);
   assert.match(body, /https:\/\/public\.example\.com\/contact/);
   assert.doesNotMatch(body, /makers-origin\.example|origin\.example\.com/);
+});
+
+test("China HTML rewrites preserve mixed Cookie Consent and Google bridge scripts", async () => {
+  globalThis.fetch = async () => htmlResponse(`<!doctype html><html><head></head><body>
+    <script>window.dataLayer=window.dataLayer||[];window.gtag=function(){dataLayer.push(arguments)};window.cwOptionsPanel={};function setConsent(mode){localStorage.setItem('consentMode',JSON.stringify(mode))}window.addEventListener('cw:consent-updated',function(){window.gtag('consent','update',{ad_storage:'granted'})});</script>
+    <script>window.dataLayer=window.dataLayer||[];window.gtag('js',new Date());window.gtag('config','G-TEST');</script>
+  </body></html>`);
+
+  const response = await handleProxyRequest(
+    new Request("https://proxy.example.com/consent-mixed"),
+    { ORIGIN_HOST: "origin.example.com" },
+    createContext("CN")
+  );
+  const body = await response.text();
+  assert.match(body, /cwOptionsPanel/);
+  assert.match(body, /setConsent/);
+  assert.match(body, /cw:consent-updated/);
+  assert.doesNotMatch(body, /gtag\('js'/);
+});
+
+test("OVERSEAS_MODE=direct-assets keeps Webflow assets direct while hiding the origin host", async () => {
+  globalThis.fetch = async () => htmlResponse(`<!doctype html><html><head>
+    <link rel="canonical" href="https://origin.example.com/about">
+    <link rel="stylesheet" href="https://cdn.prod.website-files.com/site/app.css" integrity="sha384-keep-me">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  </head><body>
+    <a href="https://origin.example.com/contact">Contact</a>
+    <img src="https://cdn.prod.website-files.com/site/hero.webp">
+    <script src="https://d3e54v103j8qbb.cloudfront.net/js/jquery-3.5.1.min.dc5e7f18c8.js?site=123"></script>
+    <script src="https://www.googletagmanager.com/gtag/js?id=G-TEST"></script>
+  </body></html>`);
+
+  const response = await handleProxyRequest(
+    new Request("https://global.example.com/about"),
+    { ORIGIN_HOST: "origin.example.com", OVERSEAS_MODE: "direct-assets" },
+    createContext("US")
+  );
+  const body = await response.text();
+
+  assert.equal(response.headers.get("x-edgeflow-content-mode"), "overseas-direct-assets");
+  assert.equal(response.headers.get("x-edgeflow-cache"), "BYPASS");
+  assert.match(body, /https:\/\/global\.example\.com\/about/);
+  assert.match(body, /https:\/\/global\.example\.com\/contact/);
+  assert.doesNotMatch(body, /origin\.example\.com/);
+  assert.doesNotMatch(body, /__eo_asset_v3__/);
+  assert.match(body, /https:\/\/cdn\.prod\.website-files\.com\/site\/app\.css/);
+  assert.match(body, /https:\/\/cdn\.prod\.website-files\.com\/site\/hero\.webp/);
+  assert.match(body, /integrity="sha384-keep-me"/);
+  assert.match(body, /fonts\.googleapis\.com/);
+  assert.match(body, /d3e54v103j8qbb\.cloudfront\.net/);
+  assert.match(body, /googletagmanager\.com/);
+});
+
+test("direct-assets mode keeps mainland and unknown traffic on China rewrites", async () => {
+  globalThis.fetch = async () => htmlResponse(`<!doctype html><html><head>
+    <link rel="stylesheet" href="https://cdn.prod.website-files.com/site/app.css" integrity="sha384-remove-me">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+  </head><body>
+    <img src="https://cdn.prod.website-files.com/site/hero.webp">
+    <script src="https://www.googletagmanager.com/gtag/js?id=G-TEST"></script>
+  </body></html>`);
+
+  for (const context of [createContext("CN"), createContext("")]) {
+    const response = await handleProxyRequest(
+      new Request("https://global.example.com/"),
+      { ORIGIN_HOST: "origin.example.com", OVERSEAS_MODE: "direct-assets" },
+      context
+    );
+    const body = await response.text();
+    assert.equal(response.headers.get("x-edgeflow-content-mode"), "china-optimized");
+    assert.match(body, /global\.example\.com\/__eo_asset_v3__\/cdn\.prod\.website-files\.com/);
+    assert.doesNotMatch(body, /sha384-remove-me|fonts\.googleapis\.com|googletagmanager\.com/);
+  }
+});
+
+test("direct-assets mode preserves overseas preload URLs and rewrites only origin redirects", async () => {
+  globalThis.fetch = async () => new Response(null, {
+    status: 302,
+    headers: {
+      location: "https://origin.example.com/next?q=1",
+      link: '<https://cdn.prod.website-files.com/site/app.css>; rel=preload; as=style; integrity="sha384-keep-me"'
+    }
+  });
+
+  const response = await handleProxyRequest(
+    new Request("https://global.example.com/start"),
+    { ORIGIN_HOST: "origin.example.com", OVERSEAS_MODE: "direct-assets" },
+    createContext("DE")
+  );
+
+  assert.equal(response.headers.get("location"), "https://global.example.com/next?q=1");
+  assert.match(response.headers.get("link"), /cdn\.prod\.website-files\.com/);
+  assert.match(response.headers.get("link"), /integrity="sha384-keep-me"/);
+  assert.equal(response.headers.get("x-edgeflow-content-mode"), "overseas-direct-assets");
 });
 
 test("trusted Site Acceleration secret selects the external host without reaching upstream", async () => {
@@ -1018,6 +1114,34 @@ test("CACHE_VERSION isolates persistent HTML snapshots between releases", async 
   assert.equal(globalThis.EDGEFLOW_SNAPSHOT.items.size, 2);
 });
 
+test("HTML rewrite marker isolates snapshots without changing asset namespace", async () => {
+  globalThis.caches = {
+    default: {
+      async match() { return undefined; },
+      async put() { throw new Error("cache forbidden"); }
+    }
+  };
+  const blob = new MemoryBlob();
+  globalThis.EDGEFLOW_BLOB_STORE = blob;
+  globalThis.EDGEFLOW_SNAPSHOT = new MemoryKv();
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("site.12345678.css")) {
+      return new Response("body", { headers: { "content-type": "text/css" } });
+    }
+    return htmlResponse("<html><body>new consent-safe snapshot</body></html>");
+  };
+
+  const htmlRequest = new Request("https://proxy.example.com/");
+  const assetRequest = new Request("https://proxy.example.com/__eo_asset_v3__/cdn.prod.website-files.com/site.12345678.css");
+  const html = await handleProxyRequest(htmlRequest, { ORIGIN_HOST: "origin.example.com", CACHE_VERSION: "release-a" }, createContext());
+  const asset = await handleProxyRequest(assetRequest, { ORIGIN_HOST: "origin.example.com", CACHE_VERSION: "release-a" }, createContext());
+
+  assert.equal(html.headers.get("x-edgeflow-snapshot"), "MISS");
+  assert.equal(asset.headers.get("x-edgeflow-cache-store"), "STORE_BLOB_OK");
+  assert.equal([...globalThis.EDGEFLOW_SNAPSHOT.items.keys()].every((key) => key.startsWith("html_")), true);
+  assert.equal([...blob.items.keys()].every((key) => key.startsWith("assets/")), true);
+});
+
 test("expired non-fingerprinted Blob assets are fetched again", async () => {
   globalThis.caches = {
     default: {
@@ -1369,4 +1493,86 @@ test("refresh follows public-host sitemap indexes and supports pagination", asyn
     "/page-24",
     "/page-25"
   ]);
+});
+
+const googleGatewayFixture = `<html><head>
+<script>(function(w){w.google_tags_first_party=['GTM-TEST']})(window);</script>
+<script async src="/9i1h7htkfq16SITE/loader"></script>
+<link rel="preload" as="script" href="/9i1h7htkfq16SITE/destination">
+<script src="https://www.googletagmanager.com/gtm.js?id=GTM-TEST"></script>
+<script src="https://www.googleadservices.com/pagead/conversion.js"></script>
+<script>window.dataLayer=[];gtag('config','G-TEST')</script>
+<script src="https://www.google.com/recaptcha/api.js"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=public-test"></script>
+</head><body>
+<a href="https://www.google.com/maps">Directions</a>
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TEST"></iframe></noscript>
+<img src="https://googleads.g.doubleclick.net/pagead/viewthroughconversion/123">
+<script>window.cwOptionsPanel={};function setConsent(mode){localStorage.setItem('consentMode',JSON.stringify(mode));window.gtag?.('consent','update',mode)}window.addEventListener('cw:consent-updated',setConsent)</script>
+<script>window.__chinashopMetaBridge=true;window.addEventListener('cw:consent-updated',()=>window.fbq?.('consent','grant'));</script>
+<script async src="/business/app.js"></script>
+</body></html>`;
+
+test("CN removes native first-party Google gateway and Ads while preserving consent, Meta and non-tracking Google functions", async () => {
+  globalThis.fetch = async () => htmlResponse(googleGatewayFixture);
+  const response = await handleProxyRequest(new Request("https://proxy.example.com/google-clean"),
+    { ORIGIN_HOST: "origin.example.com", OVERSEAS_MODE: "direct-assets" }, createContext("CN"));
+  const body = await response.text();
+  assert.doesNotMatch(body, /google_tags_first_party|9i1h7htkfq16|googletagmanager\.com|googleadservices\.com|doubleclick\.net|gtag\('config'/);
+  for (const preserved of [/setConsent/, /cw:consent-updated/, /__chinashopMetaBridge/, /fbq/, /recaptcha\/api\.js/, /maps\.googleapis\.com/, /google\.com\/maps/, /business\/app\.js/]) assert.match(body, preserved);
+});
+
+test("CN discovers changed native gateway paths without removing unrelated async scripts", async () => {
+  globalThis.fetch = async () => htmlResponse(`<html><head>
+  <script>window.google_tags_first_party=['GTM-TEST'];</script>
+  <script async src='https://proxy.example.com/new-gateway/token'></script>
+  <link rel='prefetch' href='/new-gateway/next'>
+  <script async src='/business/token'></script></head><body>ok</body></html>`);
+  const response = await handleProxyRequest(new Request("https://proxy.example.com/discovery"),
+    { ORIGIN_HOST: "origin.example.com" }, createContext("CN"));
+  const body = await response.text();
+  assert.doesNotMatch(body, /google_tags_first_party|new-gateway/);
+  assert.match(body, /business\/token/);
+});
+
+test("overseas keeps native Google gateway and Ads in direct-assets and proxy modes", async () => {
+  globalThis.fetch = async () => htmlResponse(googleGatewayFixture);
+  for (const mode of ["direct-assets", "proxy"]) {
+    const response = await handleProxyRequest(new Request("https://proxy.example.com/google-overseas"),
+      { ORIGIN_HOST: "origin.example.com", OVERSEAS_MODE: mode }, createContext("US"));
+    const body = await response.text();
+    assert.match(body, /google_tags_first_party/);
+    assert.match(body, /9i1h7htkfq16SITE\/loader/);
+    assert.match(body, /googletagmanager\.com/);
+    assert.match(body, /googleadservices\.com/);
+    assert.match(body, /gtag\('config'/);
+  }
+});
+
+test("CN stale-tab gateway GET and POST are stopped before upstream, while overseas still forwards", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response("upstream"); };
+  for (const method of ["GET", "POST"]) {
+    const response = await handleProxyRequest(new Request("https://proxy.example.com/9i1h7htkfq16SITE/old-script", { method }),
+      { ORIGIN_HOST: "origin.example.com" }, createContext("CN"));
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("x-edgeflow-google-tracking"), "disabled-cn");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+  assert.equal(calls, 0);
+  const overseas = await handleProxyRequest(new Request("https://proxy.example.com/9i1h7htkfq16SITE/old-script"),
+    { ORIGIN_HOST: "origin.example.com", OVERSEAS_MODE: "direct-assets" }, createContext("US"));
+  assert.equal(await overseas.text(), "upstream");
+  assert.equal(calls, 1);
+});
+
+test("HTML Cache API keys isolate rewrite releases without changing static cache keys", async () => {
+  const keys = [];
+  globalThis.caches = { default: { async match(req) { keys.push(req.url); }, async put() {} } };
+  globalThis.fetch = async (url) => String(url).endsWith('.css')
+    ? new Response('body{}', { headers: { 'content-type': 'text/css' } }) : htmlResponse('<html>ok</html>');
+  await handleProxyRequest(new Request('https://proxy.example.com/'), { ORIGIN_HOST: 'origin.example.com', CACHE_VERSION: 'keep-assets' }, createContext('CN'));
+  await handleProxyRequest(new Request('https://proxy.example.com/__eo_asset_v3__/cdn.prod.website-files.com/app.css'), { ORIGIN_HOST: 'origin.example.com', CACHE_VERSION: 'keep-assets' }, createContext('CN'));
+  assert.ok(keys.some(key => key.includes('keep-assets.html-2.10.2')));
+  assert.ok(keys.some(key => key.includes('keep-assets') && !key.includes('html-')));
 });

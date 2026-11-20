@@ -1,362 +1,297 @@
-/**
- * Webflow China Speed — Cloudflare Worker Template
- * wf-cn-{project}-worker.js
- * 版本：2026-03-18
- *
- * 改动清单：
- *  [1] HTML 响应加缓存头 + CF 边缘 cacheTtl:300，避免每次回源
- *  [2] 清除 HTML 里 Google preconnect / dns-prefetch / gstatic 标签
- *  [3] CSS 内 @import fonts.googleapis.com 过滤
- *  [4] R2 objectKey 包含 query string，防止缓存 key 冲突
- *  [5] jQuery 直接替换为 jsdmirror（大陆 CDN 节点，字节一致，SRI 校验通过）
- *  [6] 重写 data-video-urls 属性，将视频 URL 也纳入 /_cdn/ R2 缓存
- *  [7] /_cdn/ 支持 HTTP Range 请求，视频可分段加载、立即起播
- *  [8] /_cdn/ CSS 文件在缓存前先改写内部绝对 URL，防止字体/图片绕过 R2 直连 Fastly
- *  [9] 移除 stylesheet <link> 的 integrity 属性，防止 CSS 内容改写后 SRI 校验失败导致无样式
- * [10] 重写视频 <source src>、data-poster-url、video[style] background-image，补全视频 poster 漏洞
- * [11] redirect: "manual" 拦截 Webflow 301/302，修正 Location 头防止 webflow.io 泄露
- * [12] Webflow Badge 用 CSS + MutationObserver 双重移除（Badge 是 JS 动态注入的，HTMLRewriter 无法直接删除）
- */
+import { serveAsset } from './assets.js';
+import { correctSecret, hashKey, HTML_LIMIT, mark, mayCache, positiveInt, publicHtmlUrl, readBounded } from './cache.js';
+import { publicUrl, rewriteHeaders, rewriteHtml } from './html.js';
+import { WEBFLOW_GOOGLE_GATEWAY_PATH_RE } from './tracking.js';
 
-// Build stamp — injected by build.mjs from edgeflow.config.js + git
-// Build stamp — set by build.mjs; falls back gracefully when deployed without build
-const BUILD_VERSION = "__BUILD_COMMIT__";
-const BUILD_DEPLOY_TIME = "__BUILD_DEPLOY_TIME__";
-const ASSET_HOST_SUFFIXES = ["website-files.com", "uploads-ssl.webflow.com"];
+export { isAllowedAssetHost, rewriteCssAssetUrls } from './html.js';
 
-export default {
-  async fetch(req, env, ctx) {
-    const response = await handleRequest(req, env, ctx);
-    return applySeoIsolation(response, new URL(req.url).hostname, env.NOINDEX_HOSTS);
+const BUILD_VERSION = '__BUILD_COMMIT__';
+const BUILD_DEPLOY_TIME = '__BUILD_DEPLOY_TIME__';
+const VERSION = '1.1.0';
+const HTML_REWRITE_VERSION = '2026-11-20.1';
+const DEMO_ORIGIN = 'webflowcn.webflow.io';
+const JQUERY_MIRROR = 'https://cdn.jsdmirror.com/npm/jquery@3.5.1/dist/jquery.min.js';
+
+function httpsOrigin(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value.includes('://') ? value : `https://${value}`);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port && url.pathname === '/' && !url.search && !url.hash ? url : null;
+  } catch {
+    return null;
   }
-};
-
-async function handleRequest(req, env, ctx) {
-    const url = new URL(req.url);
-    const pathname = url.pathname;
-
-    // Version endpoint (for online/offline sync check)
-    if (pathname === "/_debug") {
-      return Response.json({
-        ok: true,
-        runtime: "cloudflare-worker",
-        version: BUILD_VERSION.startsWith("__") ? (env.BUILD_VERSION || "dev") : BUILD_VERSION,
-        deployTime: BUILD_DEPLOY_TIME.startsWith("__") ? (env.DEPLOY_TIME || "N/A") : BUILD_DEPLOY_TIME,
-        host: url.hostname
-      });
-    }
-
-    const WEBFLOW_HOST = env.WEBFLOW_HOST || "webflowcn.webflow.io";
-    const CUSTOM_DOMAIN = url.hostname; // 用户的自定义域名（从请求自动获取）
-
-    // 1️⃣ 静态资源处理（robots.txt / sitemap.xml 从 R2 Public 返回，R2 未命中则生成默认内容）
-    if (pathname === "/robots.txt" || pathname === "/sitemap.xml") {
-      const r2Base = env.R2_PUBLIC_BASE || "";
-      // 只在 R2_PUBLIC_BASE 已配置时尝试从 R2 获取
-      if (r2Base.startsWith("http")) {
-        const fileResponse = await fetch(`${r2Base}${pathname}`, { cf: { cacheEverything: true } });
-        if (fileResponse.ok) {
-          const contentType = pathname.endsWith(".xml") ? "application/xml" : "text/plain";
-          return new Response(fileResponse.body, {
-            headers: { "content-type": contentType, "cache-control": "public, max-age=3600" }
-          });
-        }
-      }
-      // R2 未配置或未命中时：生成默认内容，避免降级到反向代理
-      const sitemapUrl = `https://${url.hostname}/sitemap.xml`;
-      if (pathname === "/robots.txt") {
-        const body = `User-agent: *\nAllow: /\nCrawl-delay: 10\nSitemap: ${sitemapUrl}\n`;
-        return new Response(body, {
-          headers: { "content-type": "text/plain", "cache-control": "public, max-age=3600" }
-        });
-      } else {
-        // sitemap.xml fallback: 空站点地图
-        const body = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
-        return new Response(body, {
-          headers: { "content-type": "application/xml", "cache-control": "public, max-age=3600" }
-        });
-      }
-    }
-
-    // 2️⃣ /_cdn/ 路径：R2 持久化缓存层（含 Range 请求支持）
-    if (pathname.startsWith("/_cdn/")) {
-      const regex = /^\/_cdn\/([^\/]+)\/(.*)$/;
-      const match = pathname.match(regex);
-      if (!match) return new Response("Invalid CDN Path", { status: 400 });
-
-      const upstreamHost = match[1];
-      if (!isAllowedAssetHost(upstreamHost)) {
-        return new Response("Invalid CDN Host", { status: 400 });
-      }
-      const restPath = match[2];
-      const upstreamURL = `https://${upstreamHost}/${restPath}${url.search}`;
-
-      // [改动 4] R2 key 包含 query string，避免同路径不同参数映射到同一 key
-      const objectKey = `assets/${upstreamHost}/${restPath}${
-        url.search ? "_" + btoa(url.search).replace(/[^a-z0-9]/gi, "") : ""
-      }`;
-
-      // [改动 7] 读取 Range 请求头，用于视频分段加载
-      const rangeHeader = req.headers.get("Range");
-
-      try {
-        const object = await env.MY_BUCKET.get(objectKey);
-
-        if (object) {
-          // R2 命中：处理 Range 请求（视频分段播放）
-          if (rangeHeader) {
-            const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-            if (rangeMatch) {
-              const totalSize = object.size;
-              const start = parseInt(rangeMatch[1]);
-              const end = rangeMatch[2] ? parseInt(rangeMatch[2]) : totalSize - 1;
-              const length = end - start + 1;
-
-              const rangeObject = await env.MY_BUCKET.get(objectKey, {
-                range: { offset: start, length }
-              });
-
-              if (rangeObject) {
-                const headers = new Headers();
-                rangeObject.writeHttpMetadata(headers);
-                headers.set("content-range", `bytes ${start}-${end}/${totalSize}`);
-                headers.set("content-length", String(length));
-                headers.set("accept-ranges", "bytes");
-                headers.set("cache-control", "public, max-age=31536000, immutable");
-                headers.set("x-cache", "HIT-R2-RANGE");
-                return new Response(rangeObject.body, { status: 206, headers });
-              }
-            }
-          }
-
-          // 普通完整请求
-          const headers = new Headers();
-          object.writeHttpMetadata(headers);
-          headers.set("cache-control", "public, max-age=31536000, immutable");
-          headers.set("accept-ranges", "bytes");
-          headers.set("x-cache", "HIT-R2");
-          return new Response(object.body, { headers });
-        }
-
-        // R2 未命中：回源上游，同时异步写入 R2
-        // 注意：有 Range 请求时先返回上游分段响应，不写 R2（等完整请求来缓存）
-        const fetchHeaders = {
-          "user-agent": req.headers.get("user-agent") || "Cloudflare-Worker"
-        };
-        if (rangeHeader) fetchHeaders["Range"] = rangeHeader;
-
-        const upstreamResp = await fetch(upstreamURL, {
-          headers: fetchHeaders,
-          cf: { cacheEverything: true, cacheTtl: 86400 }
-        });
-
-        if (upstreamResp.ok || upstreamResp.status === 206) {
-          const contentType = upstreamResp.headers.get("content-type");
-          const newHeaders = new Headers(upstreamResp.headers);
-          newHeaders.delete("content-length"); // 避免 ReadableStream body 与继承的 content-length 不匹配
-          newHeaders.set("accept-ranges", "bytes");
-          newHeaders.set("x-cache", rangeHeader ? "MISS-R2-RANGE-PASS" : "MISS-R2-FETCHED");
-
-            // 只有完整响应（200）才缓存进 R2，避免缓存残片
-          if (upstreamResp.status === 200 && !rangeHeader) {
-            newHeaders.set("cache-control", "public, max-age=31536000, immutable");
-
-            // [改动 8] CSS 文件：先改写内部绝对 URL，再缓存进 R2
-            // 问题根源：/_cdn/ 直接透传原始 CSS，CSS 里的 font/image 绝对地址绕过了 R2 缓存
-            const isCss = contentType?.includes("text/css") || restPath.endsWith(".css");
-            if (isCss) {
-              let cssText = await upstreamResp.text();
-              cssText = rewriteCssAssetUrls(cssText);
-              newHeaders.set("content-type", "text/css; charset=UTF-8");
-              newHeaders.set("x-cache", "MISS-R2-FETCHED-CSS-REWRITTEN");
-              ctx.waitUntil(
-                env.MY_BUCKET.put(objectKey, cssText, {
-                  httpMetadata: { contentType: "text/css; charset=UTF-8", cacheControl: "public, max-age=31536000, immutable" }
-                })
-              );
-              return new Response(cssText, { status: 200, headers: newHeaders });
-            }
-
-            const copyForR2 = upstreamResp.clone();
-            ctx.waitUntil(
-              env.MY_BUCKET.put(objectKey, copyForR2.body, {
-                httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" }
-              })
-            );
-          }
-
-          return new Response(upstreamResp.body, {
-            status: upstreamResp.status,
-            headers: newHeaders
-          });
-        }
-        return new Response(`Source Not Found: ${upstreamURL}`, { status: 404 });
-      } catch (e) {
-        return new Response(`R2 Error: ${e.message}`, { status: 500 });
-      }
-    }
-
-    // 3️⃣ 反向代理 Webflow 主站
-    const proxyURL = new URL(req.url);
-    proxyURL.hostname = WEBFLOW_HOST;
-    proxyURL.protocol = "https:";
-
-    // [改动 1] 加 cacheTtl: 300，让 CF 边缘节点缓存回源响应 5 分钟
-    // [改动 11] redirect: "manual" 拦截 Webflow 301/302 重定向
-    // 原因：Webflow 语言路由和 URL 规范化会返回 301/302，Location 头含 webflow.io 域名
-    // 如果用 redirect: "follow"，浏览器会直接跳到 webflow.io（在大陆被 GFW 封控）
-    const originResp = await fetch(proxyURL.toString(), {
-      method: req.method,
-      headers: req.headers,
-      redirect: "manual",
-      cf: { cacheEverything: true, cacheTtl: 300 }
-    });
-
-    // [改动 11] 处理 301/302 重定向：修正 Location 头
-    if (originResp.status === 301 || originResp.status === 302) {
-      const location = originResp.headers.get("Location");
-      if (location) {
-        const fixedLocation = location
-          .replace(new RegExp(`https?://${WEBFLOW_HOST.replace(/\./g, "\\.")}`, "g"), `https://${CUSTOM_DOMAIN}`)
-          .replace(new RegExp(`https?://www\\.${CUSTOM_DOMAIN.replace(/\./g, "\\.")}`, "g"), `https://${CUSTOM_DOMAIN}`);
-        const redirectHeaders = new Headers(originResp.headers);
-        redirectHeaders.set("Location", fixedLocation);
-        return new Response(null, { status: originResp.status, headers: redirectHeaders });
-      }
-      return originResp;
-    }
-
-    const contentType = originResp.headers.get("content-type") || "";
-
-    // 4️⃣ HTML 处理
-    if (contentType.includes("text/html")) {
-      const rewriter = new HTMLRewriter()
-        // 移除 Google Fonts stylesheet
-        .on('link[href*="fonts.googleapis.com"]', { element(el) { el.remove(); } })
-        // [改动 2] 移除所有 Google / gstatic preconnect & dns-prefetch
-        .on('link[rel="preconnect"][href*="google"]',    { element(el) { el.remove(); } })
-        .on('link[rel="preconnect"][href*="gstatic"]',   { element(el) { el.remove(); } })
-        .on('link[rel="dns-prefetch"][href*="google"]',  { element(el) { el.remove(); } })
-        .on('link[href*="fonts.gstatic.com"]',           { element(el) { el.remove(); } })
-        // 移除 WebFont Loader（Google Fonts JS 加载器）
-        .on('script[src*="webfont.js"]', { element(el) { el.remove(); } })
-        // [改动 9] 移除 stylesheet <link> 的 integrity 属性
-        // 原因：/_cdn/ 处理器会改写 CSS 内部 URL，导致文件内容变化，SRI 哈希失效
-        // 浏览器会拒绝加载哈希不匹配的 CSS，导致页面无样式
-        .on('link[rel="stylesheet"][integrity]', {
-          element(el) { el.removeAttribute("integrity"); }
-        })
-        // [改动 5] 将 Webflow 注入的 jQuery（CloudFront）替换为 jsdmirror
-        // 三源字节完全一致（SHA256 相同），SRI integrity 校验仍会通过
-        .on('script[src*="d3e54v103j8qbb.cloudfront.net"][src*="jquery"]', {
-          element(el) {
-            el.setAttribute("src", "https://cdn.jsdmirror.com/npm/jquery@3.5.1/dist/jquery.min.js");
-            // crossorigin 保留（SRI 跨域校验必须）
-          }
-        })
-        // [改动 12] Webflow Badge 双重移除
-        // 问题：Badge 是 Webflow JS 在页面加载后动态注入的，HTMLRewriter 处理时 DOM 里还没有它
-        // 方案：CSS 隐藏（防闪现）+ MutationObserver（彻底删除 DOM 节点）
-        .on("head", {
-          element(el) {
-            el.append(
-              `<style>.w-webflow-badge,[class*="webflow-badge"]{display:none!important;visibility:hidden!important;opacity:0!important}</style>`,
-              { html: true }
-            );
-          }
-        })
-        .on("body", {
-          element(el) {
-            el.append(
-              `<script>(function(){function r(){var e=document.querySelector('.w-webflow-badge,[class*="webflow-badge"]');if(e)e.remove()}r();new MutationObserver(r).observe(document.documentElement,{childList:true,subtree:true})})()</script>`,
-              { html: true }
-            );
-          }
-        })
-        // 重写标准资产 URL（link/script/img/source）到 /_cdn/ 路径
-        // source[src] 覆盖 <video> 的 <source> 子元素；source[srcset] 覆盖 <picture> 的多分辨率图
-        .on("link[href], script[src], img[src], source[src], source[srcset]", {
-          element(el) {
-            for (const attr of ["href", "src", "srcset"]) {
-              const val = el.getAttribute(attr);
-              if (val) el.setAttribute(attr, rewriteAssetURL(val));
-            }
-          }
-        })
-        // [改动 6] 重写 Webflow 背景视频的 data-video-urls 属性
-        // 格式：逗号分隔的完整 URL 列表（mp4,webm）
-        .on("[data-video-urls]", {
-          element(el) {
-            const val = el.getAttribute("data-video-urls");
-            if (val) {
-              const rewritten = val
-                .split(",")
-                .map(u => rewriteAssetURL(u.trim()))
-                .join(",");
-              el.setAttribute("data-video-urls", rewritten);
-            }
-          }
-        })
-        // [改动 10] 重写 Webflow 背景视频的 poster 相关属性
-        // data-poster-url：Webflow JS 读取用于设置海报帧
-        // video[style]：Webflow 将 poster 写入 style="background-image:url(...)"，浏览器直接读取
-        .on("[data-poster-url]", {
-          element(el) {
-            const val = el.getAttribute("data-poster-url");
-            if (val) el.setAttribute("data-poster-url", rewriteAssetURL(val));
-          }
-        })
-        .on("video[style]", {
-          element(el) {
-            const style = el.getAttribute("style");
-            if (style && style.includes("background-image")) {
-              const rewritten = style.replace(
-                /url\(["']?(https:\/\/[\w.-]*(?:website-files\.com|webflow\.com)[^"')]*?)["']?\)/g,
-                (_, u) => `url("${rewriteAssetURL(u)}")`
-              );
-              el.setAttribute("style", rewritten);
-            }
-          }
-        });
-
-      // [改动 1] 设置 HTML 缓存头：CF 边缘缓存 5 分钟
-      const respHeaders = new Headers(originResp.headers);
-      respHeaders.set("cache-control", "public, max-age=300, s-maxage=300");
-      respHeaders.delete("set-cookie"); // 移除 cookie 避免缓存污染
-      respHeaders.delete("content-length"); // HTMLRewriter transform 后 body 是 ReadableStream，长度未知
-
-      return new Response(rewriter.transform(originResp).body, {
-        status: originResp.status,
-        headers: respHeaders
-      });
-    }
-
-    // 5️⃣ CSS 处理
-    if (contentType.includes("text/css")) {
-      let cssText = await originResp.text();
-
-      // [改动 3] 过滤 CSS 文件内的 Google Fonts @import
-      cssText = cssText.replace(
-        /@import\s+url\(['"]?https?:\/\/fonts\.googleapis\.com[^'")\s]*['"]?\)[^;]*;/g,
-        ""
-      );
-
-      // 重写资产域名到 /_cdn/ 路径（含 Webflow jQuery CloudFront 域名）
-      cssText = rewriteCssAssetUrls(cssText);
-
-      return new Response(cssText, {
-        headers: {
-          "content-type": "text/css; charset=UTF-8",
-          "cache-control": "public, max-age=31536000, immutable",
-          "x-processed": "true"
-        }
-      });
-    }
-
-    // 6️⃣ 其余流量透传
-    return originResp;
 }
 
+function config(env, url) {
+  return {
+    origin: httpsOrigin(env.ORIGIN_HOST ?? env.WEBFLOW_HOST ?? DEMO_ORIGIN),
+    publicOrigin: httpsOrigin(env.PUBLIC_HOST)?.origin || url.origin,
+    redirectHost: httpsOrigin(env.OVERSEAS_REDIRECT_HOST),
+    directAssets: env.OVERSEAS_MODE === 'direct-assets',
+    cacheVersion: /^[a-z\d._-]{1,64}$/i.test(env.CACHE_VERSION || '') ? env.CACHE_VERSION : 'v1',
+    htmlTtl: positiveInt(env.CACHE_TTL, 300, 3600),
+    snapshotTtl: positiveInt(env.SNAPSHOT_TTL, 900, 86400),
+    staleLimit: positiveInt(env.SNAPSHOT_MAX_AGE, 3600, 86400),
+    assetTtl: positiveInt(env.ASSET_R2_TTL, 86400, 2592000),
+    originTimeout: positiveInt(env.ORIGIN_TIMEOUT_MS, 8000, 30000),
+    jqueryMirror: JQUERY_MIRROR,
+    r2PublicBase: httpsOrigin(env.R2_PUBLIC_BASE)
+  };
+}
+
+function diagnostic(cfg, request) {
+  return Response.json({
+    ok: Boolean(cfg.origin), runtime: 'cloudflare-worker', version: VERSION,
+    build: BUILD_VERSION.startsWith('__') ? 'dev' : BUILD_VERSION,
+    deployTime: BUILD_DEPLOY_TIME.startsWith('__') ? null : BUILD_DEPLOY_TIME,
+    host: new URL(request.url).hostname,
+    originMode: cfg.origin?.hostname.endsWith('.webflow.io') ? 'webflow-staging' : 'custom-domain',
+    overseasMode: cfg.directAssets ? 'direct-assets' : 'proxy'
+  }, { headers: { 'cache-control': 'no-store' } });
+}
+
+async function fetchOrigin(request, url, cfg) {
+  const target = new URL(cfg.origin);
+  target.pathname = url.pathname;
+  target.search = url.search;
+  const headers = new Headers(request.headers);
+  for (const name of ['host', 'x-edgeflow-site-secret', 'x-edgeflow-refresh-secret', 'cf-worker', 'x-edgeflow-hop', 'x-forwarded-host', 'forwarded']) headers.delete(name);
+  headers.set('x-edgeflow-hop', '1');
+  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  return fetch(target, {
+    method: request.method, headers, body: hasBody ? request.body : undefined,
+    redirect: 'manual', signal: AbortSignal.timeout(cfg.originTimeout), ...(hasBody ? { duplex: 'half' } : {})
+  });
+}
+
+async function fetchPage(request, url, cfg, country) {
+  const start = Date.now();
+  const upstream = await fetchOrigin(request, url, cfg);
+  const foreign = country && country !== 'CN';
+  const optimize = !(foreign && cfg.directAssets);
+  const headerUrl = new URL(cfg.publicOrigin);
+  headerUrl.pathname = url.pathname;
+  headerUrl.search = url.search;
+  const headers = rewriteHeaders(upstream.headers, headerUrl, cfg, optimize, foreign);
+  headers.set('x-edgeflow-content-mode', optimize ? 'china-optimized' : 'overseas-direct-assets');
+  headers.set('server-timing', `origin;dur=${Date.now() - start}`);
+  const response = new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+  if (request.method === 'HEAD' || !headers.get('content-type')?.includes('text/html') || upstream.status >= 300) return response;
+  // Public HTML is cached only by the explicit country-aware policy below.
+  const rewritten = await rewriteHtml(response, headerUrl, cfg, optimize, foreign);
+  return mark(rewritten, { 'cache-control': 'private, no-cache', 'x-edgeflow-cache-eligible': mayCache(upstream) ? '1' : '0' });
+}
+
+function eligible(html) {
+  return html.headers.get('x-edgeflow-cache-eligible') === '1';
+}
+
+async function saveHtml(response, key, cacheRequest, cfg, bucket, cache) {
+  const bytes = await readBounded(response, HTML_LIMIT);
+  if (!bytes) return;
+  const headers = new Headers(response.headers);
+  headers.delete('set-cookie');
+  headers.delete('x-edgeflow-cache-eligible');
+  headers.set('cache-control', `public, max-age=${cfg.htmlTtl}`);
+  await Promise.allSettled([
+    cache?.put(cacheRequest, new Response(bytes, { headers })),
+    bucket?.put(key, bytes, { customMetadata: { headers: JSON.stringify([...headers]) } })
+  ]);
+}
+
+function fromSnapshot(snapshot, age, state) {
+  const headers = new Headers(JSON.parse(snapshot.customMetadata.headers));
+  headers.set('cache-control', 'private, no-cache');
+  headers.set('x-edgeflow-snapshot-age', String(age));
+  headers.set('x-edgeflow-cache', state);
+  return new Response(snapshot.body, { headers });
+}
+
+async function htmlDelivery(request, url, cfg, country, env, ctx, force = false) {
+  const normalized = publicHtmlUrl(request, country);
+  if (!normalized || /\bno-store\b/i.test(request.headers.get('cache-control') || '')) {
+    return mark(await guardedPage(request, url, cfg, country), { 'x-edgeflow-cache': 'BYPASS' });
+  }
+  const hash = await hashKey(`${HTML_REWRITE_VERSION}\n${cfg.cacheVersion}\n${country}\n${normalized.href}\n${cfg.origin.href}\n${cfg.publicOrigin}`);
+  const key = `snapshots/html/${hash}`;
+  const cacheRequest = new Request(`${url.origin}/__proxy/internal-cache/${hash}`);
+  const cache = globalThis.caches?.default;
+  const bucket = env.SNAPSHOT_R2 === 'off' ? null : env.MY_BUCKET;
+  const requestNoCache = /\bno-cache\b/i.test(request.headers.get('cache-control') || '');
+  let snapshot;
+  let age;
+  if (!force && !requestNoCache) {
+    try {
+      const hit = await cache?.match(cacheRequest);
+      if (hit) return mark(hit, { 'cache-control': 'private, no-cache', 'x-edgeflow-cache': 'HIT' });
+    } catch { /* keep serving if zone caching is unavailable */ }
+    try {
+      snapshot = await bucket?.get(key);
+      if (snapshot?.customMetadata?.headers) {
+        age = (Date.now() - snapshot.uploaded.getTime()) / 1000;
+        if (age < cfg.snapshotTtl && age < cfg.staleLimit) return fromSnapshot(snapshot, Math.trunc(age), 'HIT-R2-HTML');
+      }
+    } catch { snapshot = undefined; }
+  }
+  const result = await guardedPage(request, url, cfg, country);
+  if (result.status >= 500 && snapshot && age < cfg.staleLimit) {
+    await result.body?.cancel();
+    return fromSnapshot(snapshot, Math.trunc(age), 'STALE-R2-HTML');
+  }
+  if (snapshot?.body) void snapshot.body.cancel().catch(() => {});
+  const output = mark(result, { 'x-edgeflow-cache': 'MISS' });
+  output.headers.delete('x-edgeflow-cache-eligible');
+  if (eligible(result)) {
+    const save = saveHtml(output.clone(), key, cacheRequest, cfg, bucket, cache).catch(error => console.warn('HTML cache write failed', error?.name));
+    if (force) await save;
+    else ctx.waitUntil(save);
+  }
+  return output;
+}
+
+async function guardedPage(request, url, cfg, country) {
+  try {
+    return await fetchPage(request, url, cfg, country);
+  } catch (error) {
+    const status = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502;
+    return new Response('Webflow origin unavailable', { status, headers: { 'cache-control': 'no-store' } });
+  }
+}
+
+async function sitemap(url, cfg) {
+  try {
+    const fetchSitemap = base => {
+      const target = new URL(base);
+      target.pathname = url.pathname;
+      return fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(cfg.originTimeout) });
+    };
+    let response;
+    if (cfg.r2PublicBase) {
+      try { response = await fetchSitemap(cfg.r2PublicBase); } catch { /* use Webflow sitemap */ }
+    }
+    if (!response?.ok) {
+      void response?.body?.cancel().catch(() => {});
+      response = await fetchSitemap(cfg.origin);
+    }
+    if (response.status >= 300 && response.status < 400 && response.headers.has('location')) {
+      return new Response(null, { status: response.status, headers: { location: publicUrl(response.headers.get('location'), cfg), 'cache-control': 'no-store' } });
+    }
+    if (!response.ok) return response;
+    const bytes = await readBounded(response, HTML_LIMIT);
+    if (!bytes) return new Response('Sitemap too large', { status: 502 });
+    const xml = new TextDecoder().decode(bytes).replace(/<loc>\s*([^<]+?)\s*<\/loc>/gi, (_, value) => {
+      try {
+        const loc = new URL(value, cfg.origin);
+        return `<loc>${cfg.publicOrigin}${loc.pathname}${loc.search}</loc>`;
+      } catch { return `<loc>${value}</loc>`; }
+    });
+    return new Response(xml, { headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+  } catch {
+    return new Response('Sitemap unavailable', { status: 502, headers: { 'cache-control': 'no-store' } });
+  }
+}
+
+async function discoverPaths(url, cfg, maxPaths) {
+  const paths = new Set();
+  const seen = new Set();
+  const pending = ['/sitemap.xml'];
+  while (pending.length && paths.size < maxPaths && seen.size < 5) {
+    const path = pending.shift();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const result = await sitemap(new URL(path, url.origin), cfg);
+    const xml = await result.text();
+    for (const [, loc] of xml.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)) {
+      let link;
+      try { link = new URL(loc); } catch { continue; }
+      if (link.origin !== cfg.publicOrigin) continue;
+      if (/\/sitemap[^/]*\.xml$/i.test(link.pathname)) pending.push(link.pathname);
+      else if (!link.search) paths.add(link.pathname);
+      if (paths.size === maxPaths) break;
+    }
+  }
+  return [...paths];
+}
+
+async function refresh(request, url, cfg, env, ctx) {
+  const headers = { 'cache-control': 'no-store' };
+  if (request.method !== 'POST') return new Response(null, { status: 405, headers: { ...headers, allow: 'POST' } });
+  const bearer = request.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+  if (!await correctSecret(bearer, env.SNAPSHOT_REFRESH_SECRET)) return new Response(null, { status: 401, headers });
+  const raw = await readBounded(request, 8192);
+  if (raw === null) return new Response('Request too large', { status: 413, headers });
+  let payload;
+  try { payload = raw.length ? JSON.parse(new TextDecoder().decode(raw)) : {}; } catch {
+    return new Response('Invalid JSON', { status: 400, headers });
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return new Response('Invalid JSON', { status: 400, headers });
+  const limit = positiveInt(payload.limit, 20, 20);
+  const offset = Math.min(180, Math.max(0, Number.parseInt(payload.offset, 10) || 0));
+  const manual = Array.isArray(payload.paths);
+  const discovered = manual ? payload.paths : await discoverPaths(url, cfg, offset + limit + 1);
+  const fallback = (env.SNAPSHOT_PATHS || '/').split(',');
+  const paths = (discovered.length || manual ? discovered : fallback).slice(manual ? 0 : offset, (manual ? 0 : offset) + limit);
+  if (paths.some(path => typeof path !== 'string' || !/^\/(?!\/)[a-z\d\/_%.-]*$/i.test(path))) return new Response('Invalid paths', { status: 400, headers });
+  const results = [];
+  for (const path of new Set(paths)) {
+    const target = new URL(path, url.origin);
+    const refreshRequest = new Request(target);
+    if (!publicHtmlUrl(refreshRequest, 'CN')) {
+      results.push({ path, status: 400 });
+      continue;
+    }
+    const response = await htmlDelivery(refreshRequest, target, cfg, 'CN', env, ctx, true);
+    results.push({ path, status: response.status });
+    await response.body?.cancel();
+  }
+  const ok = results.every(result => result.status === 200);
+  return Response.json({ ok, offset, limit, hasMore: !manual && discovered.length > offset + limit, results }, { status: ok ? 200 : 502, headers });
+}
+
+export async function handleRequest(request, env, ctx) {
+  const url = new URL(request.url);
+  const value = String(request.cf?.country || '').toUpperCase();
+  const country = value === 'XX' || value === 'T1' ? '' : value;
+  const cfg = config(env, url);
+  const front = httpsOrigin(env.SITE_ACCELERATION_PUBLIC_HOST);
+  if (front && await correctSecret(request.headers.get('x-edgeflow-site-secret'), env.SITE_ACCELERATION_SECRET)) {
+    cfg.publicOrigin = front.origin;
+  }
+  if (url.protocol === 'http:') {
+    url.protocol = 'https:';
+    return Response.redirect(url, 301);
+  }
+  if (url.pathname === '/_debug' || url.pathname === '/__proxy/health') return diagnostic(cfg, request);
+  if (!cfg.origin || cfg.origin.origin === url.origin || cfg.origin.origin === cfg.publicOrigin) return new Response('Invalid proxy origin', { status: 502 });
+  if (url.pathname.startsWith('/__proxy/internal-cache/')) return new Response('Not found', { status: 404 });
+  if (country === 'CN' && WEBFLOW_GOOGLE_GATEWAY_PATH_RE.test(url.pathname)) {
+    return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', 'x-edgeflow-google-tracking': 'disabled-cn' } });
+  }
+  if (url.pathname.startsWith('/_cdn/')) return serveAsset(request, url, cfg, env, ctx);
+  if (url.pathname === '/__proxy/refresh') return refresh(request, url, cfg, env, ctx);
+  if (/\/(?:sitemap[^/]*\.xml)$/i.test(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
+    const response = await sitemap(url, cfg);
+    return request.method === 'HEAD' ? new Response(null, response) : response;
+  }
+  if (url.pathname === '/robots.txt') {
+    const body = `User-agent: *\nAllow: /\nSitemap: ${cfg.publicOrigin}/sitemap.xml\n`;
+    return new Response(request.method === 'HEAD' ? null : body, { headers: { 'content-type': 'text/plain', 'cache-control': 'public, max-age=300' } });
+  }
+  if (country && country !== 'CN' && cfg.redirectHost && cfg.redirectHost.origin !== url.origin && ['GET', 'HEAD'].includes(request.method)) {
+    return new Response(null, { status: 302, headers: { location: `${cfg.redirectHost.origin}${url.pathname}${url.search}`, 'cache-control': 'no-store' } });
+  }
+  return htmlDelivery(request, url, cfg, country, env, ctx);
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const response = await handleRequest(request, env, ctx);
+    const tagged = mark(response, { 'x-proxy-version': `webflow-china-speedup-cf/${VERSION}` });
+    tagged.headers.delete('x-edgeflow-cache-eligible');
+    return env.NOINDEX_ALL === '1' ? mark(tagged, { 'x-robots-tag': 'noindex, nofollow' })
+      : applySeoIsolation(tagged, new URL(request.url).hostname, env.NOINDEX_HOSTS);
+  }
+};
 export function applySeoIsolation(response, requestHostname, configuredHosts) {
   const noindexHosts = parseNoindexHosts(configuredHosts);
   const hostname = normalizeSeoHostname(requestHostname);
@@ -389,45 +324,4 @@ function normalizeSeoHostname(value) {
   } catch {
     return "";
   }
-}
-
-/**
- * 将 Webflow CDN / CloudFront 资产 URL 重写到 /_cdn/ 路径
- * 支持：
- *  - 单个 URL
- *  - srcset 格式（"url1 1x, url2 2x"）
- *  - data-video-urls 格式（"url1.mp4, url2.webm"，调用前已 split）
- */
-function rewriteAssetURL(u) {
-  try {
-    // srcset 格式：包含逗号 + 空格描述符
-    if (/,\s*https?:\/\//.test(u) || (u.includes(",") && u.includes(" "))) {
-      return u.split(",").map(part => {
-        const seg = part.trim().split(/\s+/);
-        seg[0] = rewriteAssetURL(seg[0]);
-        return seg.join(" ");
-      }).join(", ");
-    }
-    const parsed = new URL(u, "https://dummy.base");
-    const host = parsed.hostname;
-    const isWebflowCDN = isAllowedAssetHost(host);
-    if (isWebflowCDN) {
-      return `/_cdn/${host}${parsed.pathname}${parsed.search}`;
-    }
-    return u;
-  } catch {
-    return u;
-  }
-}
-
-export function isAllowedAssetHost(hostname) {
-  const host = String(hostname || "").toLowerCase().replace(/\.$/, "");
-  return ASSET_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
-}
-
-export function rewriteCssAssetUrls(input) {
-  return String(input).replace(
-    /https:\/\/([\w.-]*(?:website-files\.com|uploads-ssl\.webflow\.com))/gi,
-    (match, host) => isAllowedAssetHost(host) ? `/_cdn/${host}` : match
-  );
 }

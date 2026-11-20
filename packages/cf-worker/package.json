@@ -1,6 +1,6 @@
 {
   "name": "@webflow-china-speedup/cf-worker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Cloudflare Worker + R2 reverse proxy for Webflow sites in China",

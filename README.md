@@ -1,6 +1,6 @@
 # Webflow-China-Speedup
 
-> Webflow 自定义域名在国内被 GFW 封控，打不开？两条路线，一份方案，5 分钟恢复访问。
+> 为大陆访客优化 Webflow 页面的回源与静态资源交付，提供 Cloudflare Worker 和腾讯云 EdgeOne Makers 两条路线。
 
 <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker"><img src="https://deploy.workers.cloudflare.com/button" height="32" alt="Deploy to Cloudflare Workers"></a>
 <a href="https://console.cloud.tencent.com/edgeone/pages/new?repository-url=https%3A%2F%2Fgithub.com%2Fshenyeah%2Fwebflow-china-speedup"><img src="https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg" height="32" alt="使用 EdgeOne Pages 部署"></a>
@@ -11,7 +11,7 @@
 
 ## 这是什么？
 
-2025 年 11 月起，Webflow 自定义域名的 CDN 出口 IP（`cdn.webflow.com`）被 GFW 封控。本方案通过反向代理 + 内容改写，让你的网站在国内可访问。
+本方案经由反向代理、内容改写和缓存改善大陆网络的访问体验。部署后用实际线路验证回源可用性和网页性能。
 
 两条路线可选：
 
@@ -19,10 +19,10 @@
 |---|---|---|
 | **ICP 备案** | ❌ 不需要 | ✅ 需要 |
 | **国内延迟** | 取决于跨境出口 | 取决于备案、节点调度和缓存命中，部署后实测 |
-| **费用** | 免费（10 万请求/天） | 免费起步（300 万/月） |
+| **费用** | 免费（10 万请求/天） | 按函数次数和 CPU 计量，免费额度耗尽后函数请求会终止 |
 | **部署方式** | 点按钮，自动创建 | Git 导入 |
 
-有备案 → EdgeOne（延迟最低）；无备案 → CF Worker（免费，够用）。
+结合备案条件、三网测试和套餐额度选择部署路线。
 
 ---
 
@@ -30,11 +30,11 @@
 
 ### 路线 A：CF Worker（无需备案）
 
-点击上方 **Deploy to Cloudflare Workers** → 自动创建 Worker + R2 → 绑定域名 → 完成。无需配置任何环境变量。
+点击上方 **Deploy to Cloudflare Workers** → 自动创建 Worker + R2 → 绑定访客域名，再配置 `ORIGIN_HOST`。
 
 ### 路线 B：EdgeOne Pages（需备案）
 
-点击上方 **使用 EdgeOne Pages 部署** → 从 Git 导入 → Root Directory 选 `/`（默认值） → 创建 → 绑定域名 → 完成。
+点击上方 **使用 EdgeOne Pages 部署** → 从 Git 导入 → Root Directory 选 `packages/edgeone` → 创建 → 绑定域名 → 完成。
 
 ---
 
@@ -46,8 +46,9 @@
 |---|---|
 | `ORIGIN_HOST` | 已绑定 Webflow 的专用自定义源站域名（推荐） |
 | `WEBFLOW_HOST` | `ORIGIN_HOST` 的兼容别名 |
+| `OVERSEAS_MODE=direct-assets` | 可选；海外保留原始资产 CDN 与追踪，HTML 继续走代理 |
 | `OVERSEAS_REDIRECT_HOST` | 可选；仅配置后海外访问才跳转 |
-| `CACHE_VERSION` | 建议每次发布更新，隔离旧缓存 |
+| `CACHE_VERSION` | 需要主动切换缓存命名空间时更新。HTML 改写版本独立管理 |
 | `NOINDEX_HOSTS` | 测试期间禁止收录的公开域名，多个域名用英文逗号分隔（可选） |
 
 代码保留 `webflowcn.webflow.io` 作为零配置演示。生产环境应设置专用自定义 `ORIGIN_HOST`，不要使用 `*.webflow.io` staging 域名。
@@ -90,7 +91,7 @@ NOINDEX_HOSTS=preview.example.com,www.example.com
 
 ## 当前版本与分支
 
-main：**v2.9.0**（2026-09-28），EdgeOne 支持正式自定义源站、发布缓存隔离、显式海外跳转和可分页 Sitemap 预热。
+本批目标版本为 **Makers 2.10.2** 与 **Cloudflare Worker 1.1.0**。功能对照见[同步记录](docs/workers-makers-parity.md)。
 
 - [版本更新](CHANGELOG.md)
 - [本地与 GitHub 分支索引](docs/BRANCHES.md)

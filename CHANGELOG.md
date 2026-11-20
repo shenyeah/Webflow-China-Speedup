@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Makers 2.10.2 同步海外资源直连、Consent 保留、第一方追踪过滤及 HTML 改写缓存隔离。
+- Cloudflare Worker 1.1.0 补齐生产源站、地域分流、公开 HTML 快照与预热、追踪过滤和静态响应改写，修复 R2 流式写入与 Range 处理。
+
 ## [v2.9.0] — 2026-09-28
 
 - **feat**: EdgeOne 优先使用 `ORIGIN_HOST` 自定义源站域名，`WEBFLOW_HOST` 保持兼容。

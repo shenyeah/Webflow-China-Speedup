@@ -1,103 +1,33 @@
-# CF Worker + R2 — Webflow 中国大陆加速
+# Cloudflare Worker + R2
 
-无需 ICP 备案，免费，点按钮一键部署。利用 Cloudflare 香港/新加坡节点 + R2 持久缓存。
-
-## 架构
-
-```
-大陆用户 → 自定义域名 → CF Worker（香港/新加坡）
-  ├── 静态资源 → R2 缓存命中 → 直接返回
-  ├── 静态资源未命中 → 回源 Webflow CDN → 异步写入 R2
-  └── HTML/动态 → 回源 Webflow → HTMLRewriter 流式改写 → 返回
-```
+用 Cloudflare Workers 代理已发布的 Webflow 站点。大陆响应改写静态资源并过滤 Google 统计和广告，海外可保留 Webflow 原生资源链路。实际访问速度取决于运营商、Cloudflare 节点和回源。
 
 ## 部署
 
-### 方式 A：点按钮一键部署（推荐）
+在 Webflow 绑定并发布一个专用源站域名，例如 `origin.example.com`，再为 Worker 配置 `ORIGIN_HOST=origin.example.com`。访客域名绑定 Worker，源站域名绑定 Webflow。两个地址必须分开。
 
- 点击以下按钮，Cloudflare 会**自动创建 Worker + R2 Bucket + 绑定**，零配置即可使用。默认代理 `webflowcn.webflow.io`（演示站点）。
+通过仓库的 Cloudflare Deploy 按钮可使用示例配置。手工部署时，在 `packages/cf-worker` 运行 `npm test` 和 `npm run build`。在自己的 Wrangler 配置中绑定 `MY_BUCKET` 到 R2，并以 `dist/worker.js` 为入口部署，构建会写入 Git 版本。`/_debug` 和 `/__proxy/health` 返回部署信息。
 
- [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shenyeah/webflow-china-speedup/tree/main/packages/cf-worker)
- 
- 点击按钮后：
- 
- 1. 点击 **Deploy** → Worker + R2 Bucket 自动创建、绑定、部署
- 2. 部署完成后 → **Triggers** → **Custom Domains** → 添加你的域名
- 3. 要代理你自己的网站，在 Dashboard → Settings → Variables 添加：`WEBFLOW_HOST` = 你的 `xxx.webflow.io`
- 4. 测试期间如需阻止收录，添加：`NOINDEX_HOSTS` = `preview.example.com,www.example.com`
- 
- 完成。
+| 配置 | 用途 |
+|---|---|
+| `ORIGIN_HOST` / `WEBFLOW_HOST` | 自定义 Webflow 源站及兼容别名。空配置使用演示站 |
+| `PUBLIC_HOST` | 可选的对外域名。默认使用请求域名 |
+| `OVERSEAS_MODE=direct-assets` | 海外 HTML 仍经过 Worker，原始静态资源由浏览器直连 |
+| `OVERSEAS_REDIRECT_HOST` | 可选的海外跳转目标 |
+| `NOINDEX_HOSTS` / `NOINDEX_ALL=1` | 为指定域名或整个测试部署加 `X-Robots-Tag` |
+| `CACHE_TTL` / `SNAPSHOT_TTL` / `SNAPSHOT_MAX_AGE` | 本地边缘 HTML 缓存、R2 快照新鲜期与故障回退上限，默认 300、900、3600 秒 |
+| `CACHE_VERSION` / `ASSET_R2_TTL` | 显式缓存切换、非指纹资源有效期。HTML 改写另有版本键 |
+| `SNAPSHOT_R2=off` | 关闭 HTML 的 R2 快照 |
+| `SNAPSHOT_REFRESH_SECRET` | 使用 Wrangler Secret 配置的刷新密钥 |
+| `R2_PUBLIC_BASE` | 可选的自建 sitemap 来源，失败时改用 Webflow sitemap |
+| `SITE_ACCELERATION_PUBLIC_HOST` / `SITE_ACCELERATION_SECRET` | 信任配置好的前置站点代理。请求需携带匹配的 `x-edgeflow-site-secret` |
 
-`NOINDEX_HOSTS` 支持多个逗号分隔的公开域名，匹配时在最终响应添加 `X-Robots-Tag: noindex, nofollow`。正式发布时从列表移除正式域名并重新部署即可；绑定域名与 SEO 上线互不绑定。
+刷新使用 `POST /__proxy/refresh`，传 `Authorization: Bearer …`。JSON 可传 `paths` 或 `offset` 和 `limit`。省略 `paths` 时按 sitemap 发现公开路径，每批最多 20 个。刷新服务仅写匿名大陆 HTML 缓存。未知地域使用大陆改写策略，现场地域由 Cloudflare `request.cf.country` 判定。
 
-### 方式 B：Fork 后部署（稳定性更好）
+## 缓存和视频
 
-建议 Fork 本仓库，然后编辑 `edgeflow.config.js` 替换为你自己的信息后部署：
+公开大陆 HTML 按 Host、源站、地域及改写版本隔离。登录、表单提交和功能性 URL 查询回源。边缘未命中时可使用 R2 快照，回源错误时只在配置的时间范围内返回旧内容。Cloudflare Cache API 命中只代表该节点的缓存状态。
 
-```js
-export default {
-  webflowHost: "my-site.webflow.io",           // 你的 Webflow 项目地址
-  r2PublicUrl: "REPLACE_WITH_YOUR_R2_PUBLIC_URL", // 部署后从 R2 Settings 获取
-  r2BucketBinding: "MY_BUCKET",
-  mirrors: {
-    jquery: "https://cdn.jsdmirror.com/npm/jquery@3.5.1/dist/jquery.min.js"
-  }
-};
-```
+`/_cdn/` 只转发允许的 Webflow 资产域名。保留 Range、HEAD 和 ETag 语义。CSS 改写单独使用版本键，大文件流式交付。首屏外部媒体仍按原站交互加载。视频播放器指向的 R2 媒体域保持直出，独立于代理缓存桶。
 
-然后运行 `npm run build` 构建，再通过 wrangler CLI 部署：
-
-```bash
-cd packages/cf-worker
-npm run build
-npx wrangler deploy
-```
-
-### 方式 C：wrangler CLI（推荐开发者）
-
-```bash
-# 1. 编辑 edgeflow.config.js，填入你的 WEBFLOW_HOST
-
-# 2. 构建（注入配置 + git 版本号）
-cd packages/cf-worker
-npm run build
-
-# 3. 编辑 wrangler.toml，确认 account_id 等配置
-
-# 4. 部署
-npx wrangler deploy
-```
-
-## 验证
-
-在国内网络环境访问你的域名：
-
-- 网站能正常打开 ✅
-- 字体正常加载（无 Google Fonts 超时）✅
-- 无 Webflow Badge ✅
-- DevTools Network 面板中无 `googleapis.com` 请求 ✅
-- DevTools Network 面板中静态资源 URL 以 `/_cdn/` 开头 ✅
-
-## 版本同步检查
-
-```bash
-cd packages/cf-worker
-npm run sync:check https://your-domain.com
-```
-
-对比线上部署版本与本地 git commit，确保一致性。
-
-### 快速排查
-
-| 问题 | 解决方法 |
-|------|---------|
- | 502 错误 | `WEBFLOW_HOST` 是否填对了？不要带 `https://` |
- | 页面无样式 | 只看到纯文字？刷新一次，可能是首次部署缓存未生效 |
- | 字体超时 | 检查是否未设置 `WEBFLOW_HOST`，或你的域名未绑定自定义域名 |
- | 部署后正常但代理的是 `webflowcn.webflow.io` 的内容 | 未设置 `WEBFLOW_HOST`，在 Dashboard Variables 添加即可覆盖 |
-| 网站跳转到 webflow.io | Worker 未拦截 301 重定向，确认代码已部署最新版本 |
-
-## 12 项自动优化
-
-部署后自动生效：
-Google Fonts 替换 → fonts.googleapis.cn、GA/GTM 移除、jQuery 镜像替代（jsdmirror）、视频分段加载（HTTP Range 206）、R2 永久缓存（含 query string 版本）、CSS 内部 `@font-face` URL 改写、SRI integrity 处理、Badge CSS + MutationObserver 双重移除、301/302 Location 头修正、图片懒加载注入。
+更多背景见 [功能差异和迁移记录](../../docs/workers-makers-parity.md)。
