@@ -10,6 +10,7 @@ const BUILD_DEPLOY_TIME = '__BUILD_DEPLOY_TIME__';
 const VERSION = '1.1.0';
 const HTML_REWRITE_VERSION = '2026-11-20.1';
 const DEMO_ORIGIN = 'webflowcn.webflow.io';
+const DEFAULT_R2_PUBLIC_BASE = '';
 const JQUERY_MIRROR = 'https://cdn.jsdmirror.com/npm/jquery@3.5.1/dist/jquery.min.js';
 
 function httpsOrigin(value) {
@@ -24,7 +25,7 @@ function httpsOrigin(value) {
 
 function config(env, url) {
   return {
-    origin: httpsOrigin(env.ORIGIN_HOST ?? env.WEBFLOW_HOST ?? DEMO_ORIGIN),
+    origin: httpsOrigin(env.ORIGIN_HOST || env.WEBFLOW_HOST || DEMO_ORIGIN),
     publicOrigin: httpsOrigin(env.PUBLIC_HOST)?.origin || url.origin,
     redirectHost: httpsOrigin(env.OVERSEAS_REDIRECT_HOST),
     directAssets: env.OVERSEAS_MODE === 'direct-assets',
@@ -35,7 +36,7 @@ function config(env, url) {
     assetTtl: positiveInt(env.ASSET_R2_TTL, 86400, 2592000),
     originTimeout: positiveInt(env.ORIGIN_TIMEOUT_MS, 8000, 30000),
     jqueryMirror: JQUERY_MIRROR,
-    r2PublicBase: httpsOrigin(env.R2_PUBLIC_BASE)
+    r2PublicBase: httpsOrigin(env.R2_PUBLIC_BASE || DEFAULT_R2_PUBLIC_BASE)
   };
 }
 
@@ -58,9 +59,11 @@ async function fetchOrigin(request, url, cfg) {
   for (const name of ['host', 'x-edgeflow-site-secret', 'x-edgeflow-refresh-secret', 'cf-worker', 'x-edgeflow-hop', 'x-forwarded-host', 'forwarded']) headers.delete(name);
   headers.set('x-edgeflow-hop', '1');
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  const privateRequest = hasBody || headers.has('authorization') || headers.has('cookie') || /\b(?:no-store|no-cache)\b/i.test(headers.get('cache-control') || '');
   return fetch(target, {
     method: request.method, headers, body: hasBody ? request.body : undefined,
-    redirect: 'manual', signal: AbortSignal.timeout(cfg.originTimeout), ...(hasBody ? { duplex: 'half' } : {})
+    redirect: 'manual', signal: AbortSignal.timeout(cfg.originTimeout),
+    ...(hasBody ? { duplex: 'half' } : {}), ...(privateRequest ? { cache: 'no-store' } : {})
   });
 }
 
@@ -79,7 +82,12 @@ async function fetchPage(request, url, cfg, country) {
   if (request.method === 'HEAD' || !headers.get('content-type')?.includes('text/html') || upstream.status >= 300) return response;
   // Public HTML is cached only by the explicit country-aware policy below.
   const rewritten = await rewriteHtml(response, headerUrl, cfg, optimize, foreign);
-  return mark(rewritten, { 'cache-control': 'private, no-cache', 'x-edgeflow-cache-eligible': mayCache(upstream) ? '1' : '0' });
+  const canStore = mayCache(upstream);
+  const privateResponse = !canStore || !publicHtmlUrl(request, country) && (request.headers.has('cookie') || request.headers.has('authorization') || request.method !== 'GET');
+  return mark(rewritten, {
+    'cache-control': privateResponse ? 'private, no-store' : 'private, no-cache',
+    'x-edgeflow-cache-eligible': canStore ? '1' : '0'
+  });
 }
 
 function eligible(html) {
