@@ -14,12 +14,16 @@ function rangeFor(value, size) {
 }
 
 async function serveExisting(bucket, key, request, cacheControl, ttl) {
-  const metadata = await bucket.head(key);
-  if (!metadata || (ttl && Date.now() - metadata.uploaded.getTime() >= ttl * 1000)) return null;
+  const requestedRange = request.headers.get('range');
+  const needMetadata = requestedRange || request.method === 'HEAD' || request.headers.has('if-none-match');
+  const metadata = await (needMetadata ? bucket.head(key) : bucket.get(key));
+  if (!metadata || (ttl && Date.now() - metadata.uploaded.getTime() >= ttl * 1000)) {
+    if (metadata?.body) void metadata.body.cancel().catch(() => {});
+    return null;
+  }
   const headers = new Headers({ 'cache-control': cacheControl, 'accept-ranges': 'bytes', etag: metadata.httpEtag });
   metadata.writeHttpMetadata(headers);
   headers.set('cache-control', cacheControl);
-  const requestedRange = request.headers.get('range');
   const ifRange = request.headers.get('if-range');
   const range = requestedRange && (!ifRange || ifRange === metadata.httpEtag)
     ? rangeFor(requestedRange, metadata.size) : undefined;
@@ -34,7 +38,9 @@ async function serveExisting(bucket, key, request, cacheControl, ttl) {
   if (range) headers.set('content-range', `bytes ${range.offset}-${range.offset + range.length - 1}/${metadata.size}`);
   headers.set('x-cache', range ? 'HIT-R2-RANGE' : 'HIT-R2');
   if (request.method === 'HEAD') return new Response(null, { status: range ? 206 : 200, headers });
-  const object = await bucket.get(key, { ...(range ? { range } : {}), onlyIf: { etagMatches: metadata.etag } });
+  const object = needMetadata
+    ? await bucket.get(key, { ...(range ? { range } : {}), onlyIf: { etagMatches: metadata.etag } })
+    : metadata;
   if (!object?.body) return null;
   return new Response(object.body, { status: range ? 206 : 200, headers });
 }
@@ -63,14 +69,31 @@ export async function serveAsset(request, url, cfg, env, ctx) {
   const cacheControl = immutable ? 'public, max-age=31536000, immutable' : `public, max-age=${cfg.assetTtl}`;
   const legacySuffix = !url.search ? '' : `_${btoa(url.search).replace(/[^a-z0-9]/gi, '')}`;
   const legacyKey = `assets/${host}${path}${legacySuffix}`;
-  const variant = css ? `${CSS_REVISION}:${request.headers.get('user-agent') || ''}` : 'asset';
+  const variant = host === 'fonts.googleapis.com' ? `${CSS_REVISION}:${request.headers.get('user-agent') || ''}` : css ? CSS_REVISION : 'asset';
   const key = !css && !url.search && cfg.cacheVersion === 'v1' ? legacyKey
     : `assets/${cfg.cacheVersion}/${await hashKey(`${variant}\n${upstreamUrl.href}`)}`;
   const bucket = env.MY_BUCKET;
+  const cache = globalThis.caches?.default;
+  const safeToCache = request.method === 'GET' && !['range', 'if-range', 'if-none-match', 'if-modified-since'].some(name => request.headers.has(name)) && !/\.(?:mp4|webm|mov|mp3|m4a|wav|pdf)$/i.test(path);
+  const cacheUrl = safeToCache && cache ? new Request(`${url.origin}/__proxy/internal-cache/asset/${await hashKey(key)}`) : null;
+  const putEdge = response => {
+    if (!cacheUrl || response.status !== 200) return;
+    const store = cache.put(cacheUrl, response.clone()).catch(error => console.warn('Edge asset cache write failed', error?.name));
+    ctx.waitUntil(store);
+  };
+  if (cacheUrl) {
+    try {
+      const hit = await cache.match(cacheUrl);
+      if (hit) return mark(hit, { 'x-cache': 'HIT-EDGE-ASSET' });
+    } catch { /* R2 remains available */ }
+  }
   if (bucket) {
     try {
       const cached = await serveExisting(bucket, key, request, cacheControl, immutable ? 0 : cfg.assetTtl);
-      if (cached) return cached;
+      if (cached) {
+        putEdge(cached);
+        return cached;
+      }
     } catch (error) {
       console.warn('R2 asset read failed', error?.name);
     }
@@ -80,7 +103,7 @@ export async function serveAsset(request, url, cfg, env, ctx) {
   // CSS ranges are representation-dependent after rewriting. Return the whole CSS.
   if (range && !css) headers.set('range', range);
   if (range && !css && request.headers.has('if-range')) headers.set('if-range', request.headers.get('if-range'));
-  if (request.headers.has('user-agent')) headers.set('user-agent', request.headers.get('user-agent'));
+  if (host === 'fonts.googleapis.com' && request.headers.has('user-agent')) headers.set('user-agent', request.headers.get('user-agent'));
   let upstream;
   try {
     upstream = await fetch(upstreamUrl, { method: request.method, headers, redirect: 'manual', signal: AbortSignal.timeout(cfg.originTimeout) });
@@ -112,7 +135,9 @@ export async function serveAsset(request, url, cfg, env, ctx) {
       if (cacheable) result.set('cache-control', cacheControl);
       result.set('x-cache', 'MISS-R2-FETCHED-CSS-REWRITTEN');
       if (bucket && cacheable) ctx.waitUntil(bucket.put(key, body, { httpMetadata: { contentType, cacheControl } }).catch(error => console.warn('R2 CSS write failed', error?.name)));
-      return new Response(body, { headers: result });
+      const rewritten = new Response(body, { headers: result });
+      if (cacheable) putEdge(rewritten);
+      return rewritten;
     }
     return mark(upstream, { 'x-cache': 'BYPASS-CSS-SIZE' });
   }
@@ -120,5 +145,7 @@ export async function serveAsset(request, url, cfg, env, ctx) {
     ctx.waitUntil(persistAsset(upstream.clone(), bucket, key, contentType, cacheControl)
       .catch(error => console.warn('R2 asset write failed', error?.name)));
   }
-  return mark(upstream, { 'x-cache': 'MISS-R2-FETCHED', ...(cacheable ? { 'cache-control': cacheControl } : {}) });
+  const response = mark(upstream, { 'x-cache': 'MISS-R2-FETCHED', ...(cacheable ? { 'cache-control': cacheControl } : {}) });
+  if (cacheable) putEdge(response);
+  return response;
 }

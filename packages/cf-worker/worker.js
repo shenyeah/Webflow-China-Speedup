@@ -104,6 +104,7 @@ function fromSnapshot(snapshot, age, state) {
   headers.set('cache-control', 'private, no-cache');
   headers.set('x-edgeflow-snapshot-age', String(age));
   headers.set('x-edgeflow-cache', state);
+  headers.set('server-timing', `r2-html;desc=${state}`);
   return new Response(snapshot.body, { headers });
 }
 
@@ -123,7 +124,7 @@ async function htmlDelivery(request, url, cfg, country, env, ctx, force = false)
   if (!force && !requestNoCache) {
     try {
       const hit = await cache?.match(cacheRequest);
-      if (hit) return mark(hit, { 'cache-control': 'private, no-cache', 'x-edgeflow-cache': 'HIT' });
+      if (hit) return mark(hit, { 'cache-control': 'private, no-cache', 'x-edgeflow-cache': 'HIT', 'server-timing': 'edge-cache;desc=HIT' });
     } catch { /* keep serving if zone caching is unavailable */ }
     try {
       snapshot = await bucket?.get(key);
