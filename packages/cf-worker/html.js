@@ -29,7 +29,7 @@ function rewriteInlineAssets(html, responseUrl, cfg) {
     if (/\bsrc\s*=|application\/ld\+json/i.test(attributes)) return script;
     const rewritten = body.replace(/https:\/\/[a-z\d.-]+(?=\/)/gi, value => {
       const next = assetUrl(value, responseUrl, cfg.jqueryMirror);
-      return next.startsWith('/_cdn/') ? `${cfg.publicOrigin}${next}` : value;
+      return next.startsWith('/_cdn/') ? `${cfg.publicOrigin}${next.replace(/\/$/, '')}` : value;
     });
     return `<script${attributes}>${rewritten}</script>`;
   });

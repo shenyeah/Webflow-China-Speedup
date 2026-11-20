@@ -8,7 +8,7 @@ export { isAllowedAssetHost, rewriteCssAssetUrls } from './html.js';
 const BUILD_VERSION = '__BUILD_COMMIT__';
 const BUILD_DEPLOY_TIME = '__BUILD_DEPLOY_TIME__';
 const VERSION = '1.1.0';
-const HTML_REWRITE_VERSION = '2026-11-20.2';
+const HTML_REWRITE_VERSION = '2026-11-20.3';
 const DEMO_ORIGIN = 'webflowcn.webflow.io';
 const DEFAULT_R2_PUBLIC_BASE = '';
 const JQUERY_MIRROR = 'https://cdn.jsdmirror.com/npm/jquery@3.5.1/dist/jquery.min.js';
