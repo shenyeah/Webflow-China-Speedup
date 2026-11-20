@@ -4,7 +4,7 @@ import { HTML_LIMIT, readBounded } from './cache.js';
 const WEBFLOW_CDN = ['website-files.com', 'uploads-ssl.webflow.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 const JQUERY_HOST = 'd3e54v103j8qbb.cloudfront.net';
 const JQUERY_PATH = /^\/js\/jquery-3\.5\.1(?:\.min)?\.[a-f\d]+\.js$/i;
-const ASSET_URL = /(?:https:)?\/\/[a-z\d.-]+(?=[/:?#\s"')>,]|$)/gi;
+const ASSET_URL = /(?:https:)?\/\/[a-z\d.-]+(?=[/?#\s"')>,]|$)/gi;
 const CSS_ASSET_URL = /(?:https:)?\/\/[a-z\d.-]+(?=\/)/gi;
 
 export function isAllowedAssetHost(hostname) {
@@ -22,6 +22,17 @@ function assetUrl(value, base, jqueryMirror) {
   } catch {
     return value;
   }
+}
+
+function rewriteInlineAssets(html, responseUrl, cfg) {
+  return html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (script, attributes, body) => {
+    if (/\bsrc\s*=|application\/ld\+json/i.test(attributes)) return script;
+    const rewritten = body.replace(/https:\/\/[a-z\d.-]+(?=\/)/gi, value => {
+      const next = assetUrl(value, responseUrl, cfg.jqueryMirror);
+      return next.startsWith('/_cdn/') ? `${cfg.publicOrigin}${next}` : value;
+    });
+    return `<script${attributes}>${rewritten}</script>`;
+  });
 }
 
 export function rewriteCssAssetUrls(input) {
@@ -71,7 +82,7 @@ export async function rewriteHtml(response, responseUrl, cfg, optimize, tracking
     if (bytes) {
       void response.body?.cancel().catch(() => {});
       const html = stripGoogleTracking(new TextDecoder().decode(bytes), responseUrl);
-      source = new Response(html, { status: response.status, headers });
+      source = new Response(optimize ? rewriteInlineAssets(html, responseUrl, cfg) : html, { status: response.status, headers });
     }
   }
   const rewrite = value => {
